@@ -32,7 +32,6 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import shutil
-import base64
 
 
 try:
@@ -922,33 +921,7 @@ async def solve_schedule(case: SchedulingCase):
 
         # Normalize to the shape expected by the web app/tests
         model_result = result.get("result", {})
-        response_payload = solver._to_webapp_response(model_result, run_id)
-
-        # Package the output folder contents and add them to the response
-        output_dir_str = result.get("output_directory")
-        if output_dir_str:
-            output_dir = Path(output_dir_str)
-            if output_dir.exists() and output_dir.is_dir():
-                try:
-                    packaged_files = {}
-                    for file_path in output_dir.rglob('*'):
-                        if file_path.is_file():
-                            try:
-                                with open(file_path, 'rb') as f:
-                                    content_bytes = f.read()
-                                relative_path = file_path.relative_to(output_dir)
-                                packaged_files[str(relative_path)] = base64.b64encode(content_bytes).decode('utf-8')
-                            except Exception as e:
-                                logger.warning(f"Could not read and encode file {file_path}: {e}")
-
-                    if packaged_files:
-                        response_payload['packaged_files'] = packaged_files
-                        logger.info(f"Packaged {len(packaged_files)} files from {output_dir}")
-
-                except Exception as e:
-                    logger.error(f"Failed to package output folder {output_dir}: {e}")
-
-        return response_payload
+        return solver._to_webapp_response(model_result, run_id)
 
     except Exception as e:
         logger.error(f"API error: {str(e)}")

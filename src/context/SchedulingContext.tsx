@@ -295,30 +295,22 @@ function schedulingReducer(state: SchedulingState, action: SchedulingAction): Sc
       };
       break;
     case 'SET_RESULTS':
-      // Update the in-memory state with the full payload
-      newState = {
-        ...state,
-        lastResults: action.payload,
-      };
-
-      // Persist a smaller, safer version to localStorage
+      // Save to localStorage when results are updated
       if (typeof window !== 'undefined') {
         try {
           if (action.payload) {
-            const persistableResults = {
-              run_id: action.payload.run_id,
-              output_directory: action.payload.output_directory,
-              timestamp: action.payload.timestamp,
-              solver_type: action.payload.solver_type,
-            };
-            localStorage.setItem(LAST_RESULTS_STORAGE_KEY, JSON.stringify(persistableResults));
+            localStorage.setItem(LAST_RESULTS_STORAGE_KEY, JSON.stringify(action.payload));
           } else {
             localStorage.removeItem(LAST_RESULTS_STORAGE_KEY);
           }
         } catch (error) {
-          console.warn('Failed to save simplified lastResults to localStorage:', error);
+          console.warn('Failed to save lastResults to localStorage:', error);
         }
       }
+      newState = {
+        ...state,
+        lastResults: action.payload,
+      };
       break;
     case 'GENERATE_DAYS':
       newState = {

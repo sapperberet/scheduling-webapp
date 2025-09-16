@@ -16,7 +16,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
-    "@vercel/blob": "^0.23.4",
     "@types/archiver": "^6.0.3",
     "@types/jszip": "^3.4.0",
     "@types/mime-types": "^3.0.1",

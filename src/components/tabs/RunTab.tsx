@@ -537,7 +537,6 @@ export default function RunTab() {
 
   const handleRunSolver = async (solverMode: 'auto' | 'local' | 'serverless' = 'auto') => {
     if (isRunning) return;
-    let actualSolver = 'unknown';
     
     if (!schedulingCase.shifts?.length) {
       addLog('No shifts available to optimize', 'error');
@@ -673,7 +672,11 @@ export default function RunTab() {
           if (localResponse.ok) {
             result = await localResponse.json();
             addLog('[SUCCESS] Using LOCAL high-performance solver', 'success');
-            actualSolver = 'local';
+
+            // Add solver type info to result
+            if (result && result.statistics) {
+              result.statistics.actualSolverUsed = 'local';
+            }
           } else {
             throw new Error(`Local solver returned ${localResponse.status}`);
           }
@@ -734,8 +737,12 @@ export default function RunTab() {
         }
 
         result = await serverlessResponse.json();
-        addLog('[SUCCESS] Using SERVERLESS solver', 'success');
-        actualSolver = 'serverless';
+  addLog('[SUCCESS] Using SERVERLESS solver', 'success');
+
+        // Add solver type info to result
+        if (result && result.statistics) {
+          result.statistics.actualSolverUsed = 'serverless';
+        }
       }
       
       if (!result) {
@@ -743,7 +750,8 @@ export default function RunTab() {
       }
 
       const executionTime = Date.now() - startTime;
-      addLog(`[SUCCESS] Optimization completed in ${executionTime}ms using ${actualSolver.toUpperCase()} solver`, 'success');
+      const actualSolver = (result.statistics?.actualSolverUsed as string) || 'unknown';
+  addLog(`[SUCCESS] Optimization completed in ${executionTime}ms using ${actualSolver.toUpperCase()} solver`, 'success');
       
       if (result.status === 'completed') {
         setSolverState('finished');
@@ -758,33 +766,39 @@ export default function RunTab() {
           addLog(`[OK] Generated ${solutions.length} solution(s)`, 'success');
           addLog(`[SOLVER] Solver: ${stats.solver_type || 'serverless'} (${stats.status || 'completed'})`, 'info');
           
-          let finalOutputDirectory = (result as any).output_directory;
+          // Generate a result folder name. Prefer output_directory returned by serverless solver
+          const generatedName = generateResultFolderName();
+          const outputDirFromServer = (result as SolverResult).output_directory as string | undefined;
+          let finalOutputDirectory = outputDirFromServer || generatedName;
 
-          // If local solver was used, upload the packaged results to Vercel Blob
-          if (actualSolver === 'local' && (result as any).packaged_files) {
-            addLog('[INFO] Uploading local solver results to persistent storage...', 'info');
-            try {
-              const uploadResponse = await fetch('/api/upload-packaged-results', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ packaged_files: (result as any).packaged_files }),
-              });
-
-              if (uploadResponse.ok) {
-                const uploadResult = await uploadResponse.json();
-                finalOutputDirectory = uploadResult.folderName;
-                addLog(`[SUCCESS] Successfully stored local results in: ${finalOutputDirectory}`, 'success');
-              } else {
-                const errorData = await uploadResponse.json();
-                throw new Error(errorData.error || 'Failed to upload local results');
+          // If using local solver: try to convert using run_id when output_directory wasn't provided
+          const serverRunId = (result as SolverResult).run_id as string | undefined;
+          if (actualSolver === 'local') {
+            // Prefer converting the returned output_directory if it's a uuid-like path
+            const candidate = outputDirFromServer || serverRunId;
+            if (candidate && !/^Result_\d+$/i.test(candidate)) {
+              try {
+                const conv = await fetch(`/api/convert/run-to-result?runId=${encodeURIComponent(candidate)}`);
+                if (conv.ok) {
+                  const data = await conv.json();
+                    if (data.folderName) {
+                    finalOutputDirectory = data.folderName;
+                    localStorage.setItem('result-folder-counter', JSON.stringify(parseInt(data.folderName.split('_')[1], 10)));
+                    addLog(`[FILE] Converted run folder to ${data.folderName}`, 'success');
+                  }
+                }
+              } catch {
+                // conversion failed; keep original
               }
-            } catch (uploadError) {
-              addLog(`[ERROR] Failed to upload local results to Vercel Blob: ${uploadError}`, 'error');
             }
-          } else {
-             // Generate a result folder name for serverless run
-            const generatedName = generateResultFolderName();
-            finalOutputDirectory = finalOutputDirectory || generatedName;
+          }
+          // If server provided a name, ensure our local counter is at least that high
+          if (outputDirFromServer && /^Result_\d+$/i.test(outputDirFromServer)) {
+            const existingCounter = JSON.parse(localStorage.getItem('result-folder-counter') || '0');
+            const serverNum = parseInt(outputDirFromServer.split('_')[1], 10);
+            if (!isNaN(serverNum) && serverNum > existingCounter) {
+              localStorage.setItem('result-folder-counter', JSON.stringify(serverNum));
+            }
           }
 
           // Store last run results for output folder functionality
@@ -888,38 +902,6 @@ export default function RunTab() {
     setSolverState('ready');
     setProgress(0);
   addLog('[WARN] Optimization stopped by user', 'warning');
-  };
-
-  const handleExportLatestSchedule = async () => {
-    addLog('[INFO] Exporting latest schedule...', 'info');
-    try {
-      addLog('[INFO] Getting available result folders for export...', 'info');
-      const folders = await getAvailableResultFolders();
-      addLog(`[INFO] Found ${folders.length} folders for export.`, 'info');
-
-      if (folders.length === 0) {
-        addLog('[WARN] No result folders found to export from', 'warning');
-        return;
-      }
-      const latestFolder = folders[0]; // Folders are sorted descending by name
-      addLog(`[INFO] Identified latest result folder for export: ${latestFolder.name}`, 'info');
-
-      const fileName = 'calendar.xlsx';
-      const downloadUrl = `/api/download/result-folder?name=${encodeURIComponent(latestFolder.name)}&file=${encodeURIComponent(fileName)}`;
-      addLog(`[INFO] Constructed download URL for export: ${downloadUrl}`, 'info');
-
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = downloadUrl;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      addLog(`[DOWNLOADED] Started download for: ${fileName} from ${latestFolder.name}`, 'success');
-
-    } catch (error) {
-      addLog(`[ERROR] Failed to export latest schedule: ${error}`, 'error');
-    }
   };
 
   const handleOpenOutputFolder = async () => {
@@ -1306,7 +1288,6 @@ export default function RunTab() {
 
   // Function to get all available result folders
   const getAvailableResultFolders = async () => {
-    addLog('[INFO] Fetching available result folders...', 'info');
     const folders: Array<{
       name: string;
       path: string;
@@ -1315,55 +1296,54 @@ export default function RunTab() {
     }> = [];
 
     try {
-      // Try Next.js serverless listing first
-      addLog('[INFO] Checking for serverless results (Vercel Blob)...', 'info');
+      // Try Next.js serverless listing first (this includes converted Result_N)
       try {
         const respServerless = await fetch('/api/list/result-folders');
         if (respServerless.ok) {
           const data = await respServerless.json();
-          const serverlessFolders = data.folders || [];
-          addLog(`[INFO] Found ${serverlessFolders.length} folder(s) in Vercel Blob.`, 'success');
-          serverlessFolders.forEach((f: { name: string; path: string; created: string; fileCount: number }) => {
+          (data.folders || []).forEach((f: { name: string; path: string; created: string; fileCount: number }) => {
             if (!folders.some(existing => existing.name === f.name)) folders.push(f);
           });
-        } else {
-          addLog(`[WARN] Serverless listing failed with status: ${respServerless.status}`, 'warning');
         }
-      } catch (err) {
-        addLog(`[ERROR] Could not fetch serverless results: ${err}`, 'error');
+      } catch {
+        // ignore serverless listing errors
       }
 
-      // If local solver is available, also query its listing and merge
+      // If local solver is available, also query its listing and merge (so FastAPI-listed folders show too)
       if (localSolverAvailable) {
-        addLog('[INFO] Checking for local results (localhost:8000)...', 'info');
         try {
           const response = await fetch('http://localhost:8000/results/folders');
           if (response.ok) {
             const data = await response.json();
-            const localFolders = data.folders || [];
-            addLog(`[INFO] Found ${localFolders.length} folder(s) from local solver.`, 'success');
-            localFolders.forEach((f: { name: string; path: string; created: number | string; fileCount: number }) => {
+            (data.folders || []).forEach((f: { name: string; path: string; created: number | string; fileCount: number }) => {
               const createdIso = typeof f.created === 'number' ? new Date(f.created * 1000).toISOString() : f.created;
               if (!folders.some(existing => existing.name === f.name)) {
                 folders.push({ name: f.name, path: f.path, created: createdIso, fileCount: f.fileCount });
               }
             });
-          } else {
-            addLog(`[WARN] Local solver listing failed with status: ${response.status}`, 'warning');
           }
-        } catch (err) {
-          addLog(`[ERROR] Could not fetch local results: ${err}`, 'error');
+        } catch {
+          // ignore local listing errors
         }
-      } else {
-        addLog('[INFO] Local solver not available, skipping local folder check.', 'info');
       }
 
+      // If no folders found, fallback to localStorage-generated mock folders (useful for demo/serverless when nothing persisted)
+      if (folders.length === 0) {
+        const counter = JSON.parse(localStorage.getItem('result-folder-counter') || '0');
+        for (let i = 1; i <= counter; i++) {
+          folders.push({
+            name: `Result_${i}`,
+            path: `./solver_output/Result_${i}`,
+            created: new Date(Date.now() - (counter - i) * 60000).toISOString(),
+            fileCount: Math.floor(Math.random() * 8) + 3 // 3-10 files
+          });
+        }
+      }
     } catch (error) {
-      addLog(`[ERROR] Unhandled error in getAvailableResultFolders: ${error}`, 'error');
+      addLog(`[ERROR] Error loading result folders: ${error}`, 'error');
     }
 
-    addLog(`[INFO] Total unique result folders found: ${folders.length}`, 'success');
-    return folders.sort((a, b) => parseInt(b.name.split('_')[1], 10) - parseInt(a.name.split('_')[1], 10));
+    return folders;
   };
 
   const handleSmartInstall = async () => {
@@ -2179,28 +2159,6 @@ export default function RunTab() {
               <span className="relative z-10">Stop</span>
             </button>
           )}
-          
-          {/* Open Output Folder */}
-          <button
-            onClick={handleOpenOutputFolder}
-            className="relative px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 dark:from-slate-700 dark:to-slate-800 text-white rounded-xl hover:from-slate-700 hover:to-slate-800 dark:hover:from-slate-600 dark:hover:to-slate-700 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-400/20 to-slate-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <IoFolderOpenSharp className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">
-              {lastResults ? 'View Results' : 'View Output Folder'}
-            </span>
-          </button>
-
-          {/* Export Latest Schedule */}
-          <button
-            onClick={handleExportLatestSchedule}
-            className="relative px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl hover:from-green-700 hover:to-green-800 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-green-400/20 to-green-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <IoDownloadSharp className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">Export Latest Schedule</span>
-          </button>
 
           {/* Clear Logs */}
           <button
@@ -2211,16 +2169,10 @@ export default function RunTab() {
             <IoTerminalSharp className="w-5 h-5 relative z-10" />
             <span className="relative z-10">Clear Logs</span>
           </button>
-
-          {/* Data Management */}
-          <button
-            onClick={() => setShowDataManagementModal(true)}
-            className="relative px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <IoServerSharp className="w-5 h-5 relative z-10" />
-            <span className="relative z-10">Data Backup</span>
-          </button>
+        </div>
+        <div className="bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 text-yellow-700 dark:text-yellow-300 p-4 rounded-r-lg mb-6">
+          <p className="font-bold">Note:</p>
+          <p>To view and download results, please use the <strong>Serverless</strong> run option. Results from the Local solver are only saved to your computer and cannot be viewed here.</p>
         </div>
 
         {/* Progress Bar */}
