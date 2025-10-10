@@ -41,6 +41,7 @@ from ortools.sat.python import cp_model
 from openpyxl import Workbook
 CHOSPITAL = ""
 SCALE = 1
+trashcan = set()
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -1225,8 +1226,9 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     c_slack_consec = int(get_num(consts, 'weights', 'hard', 'slack_consec', default=1))
 
     U = model.NewIntVar(0, 10**18, "U")
-    model.Add(U == c_slack_unfilled * sum(slack_unfilled) 
-              + c_slack_shift_less * sum(slack_shift_less) 
+    model.Add(U == 
+              # c_slack_unfilled * sum(slack_unfilled) 
+              c_slack_shift_less * sum(slack_shift_less) 
               + c_slack_shift_more * sum(slack_shift_more) 
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
@@ -1254,7 +1256,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
 
     # slacks enforced
     # now we solve for soft constraints
-    for i in (slack_unfilled + slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
+    for i in (slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
         model.Add(i == solver.Value(i))
 
     # soft penalty 
@@ -1431,15 +1433,53 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             on_miss_terms.append(miss)
         model.Add(soft_on_i[i] == (sum(on_miss_terms) if on_miss_terms else 0))
 
+    s = model.NewIntVar(0, nshifts + 5, "taken_shifts")
+    model.Add(s == sum(x[i, j] for i in S for j in P))
+    av_target = model.NewIntVar(0, 40, "avg_target")
+    deviations = model.NewIntVar(0, 5000, "deviation")
+    #model.Add(av_target * len(P) <= s)
+    #model.Add((av_target + 1) * len(P) >= s)
+    model.Add(av_target == nshifts // len(providers))
+    personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
+    provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
+    for i in P:
+        model.Add(provider_taken[i] == sum([x[s, i] for s in S]))
+    slack_unfairness_more = [model.NewIntVar(0, 40, "slack_unfairness_more_%d" % j) for j in P]
+    slack_unfairness_less = [model.NewIntVar(0, 40, "slack_unfairness_less_%d" % j) for j in P]
+    constant_absolutely_horrible = 1000000000000
+    absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
+    abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
+    absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    for j in P:
 
-    model.Add(Weighted == cclusters * sum(cluster_square) +
-                            cunfair * sum(deviation) +
+        lim = providers[j].get('limits', {}) or {}
+        mn = lim.get("min_total", 0)
+        mx = lim.get("max_total", None)
+        model.Add(personal_target[j] <= mx)
+        model.Add(personal_target[j] >= mn)
+        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
+        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
+        model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
+        model.Add(deviations >= absvsq[j])
+    within_diff = model.NewIntVar(0, 1000, "within_diff")
+    model.Add(within_diff == sum(absvsq))
+    model.Add(Weighted == constant_absolutely_horrible * sum(abst) +
+                            cclusters * sum(cluster_square) +
                             c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
-                            c_soft_off * sum(soft_off_i))
+                            c_soft_off * sum(soft_off_i) + 
+                            1000000000 * deviations + 
+                            ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
     print(count_horrible)
     model.minimize(Weighted)
+    global trashcan
+    for i in P:
+        trashcan.add(personal_target[i])
+        trashcan.add(provider_taken[i])
+    trashcan.add(av_target)
+    trashcan.add(deviations)
+
     # (Phase-2 solver is created in solve_two_phase)
     return dict(
         model=model,
@@ -1615,7 +1655,7 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         try: solver2.parameters.num_search_workers=int(sp['num_threads'])
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
-    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', 0.01))
+    try: solver2.parameters.relative_gap_limit = 0.0
     except: pass
     solver2.parameters.log_search_progress = True
     solver2.parameters.log_to_stdout = False    # Capture solver progress into unified log
@@ -1996,7 +2036,7 @@ DEFAULT_CONSTANTS = {
     "solver": {
         "max_time_in_seconds": 1000,
         "phase1_fraction": 0.4,
-        "relative_gap": 0.00001,
+        "relative_gap": 0.0,
         "num_threads": 8,
     },
     "weights": {
@@ -2008,11 +2048,11 @@ DEFAULT_CONSTANTS = {
             "slack_consec": 1,
         },  # could contain slack_name: BIG_WEIGHT to enforce as hard
         "soft": {
-            "cluster": 10000,
+            "cluster": 1000,
             "cluster_size": 1,  # default requested
-            "requested_off": 10000000,
-            "days_wanted_not_met": 10000000,
-            "cluster_weekend_start": 10000000,
+            "requested_off": 1000000,
+            "days_wanted_not_met": 1000000,
+            "cluster_weekend_start": 1000000,
             "unfair_number": 5000
         },
     },
@@ -2943,7 +2983,7 @@ class TestcaseGUI:
         for lbl, ent, hint in [
             ("max_time_in_seconds", self.ent_s_time, "e.g., 350"),
             ("phase1_fraction", self.ent_s_phase, "e.g., 0.4"),
-            ("relative_gap", self.ent_s_gap, "e.g., 0.01"),
+            ("relative_gap", self.ent_s_gap, "e.g., 0.0"),
             ("num_threads", self.ent_s_threads, "e.g., 8"),
         ]:
             ttk.Label(sol, text=lbl).grid(row=row, column=0, sticky="w", padx=6, pady=3)
