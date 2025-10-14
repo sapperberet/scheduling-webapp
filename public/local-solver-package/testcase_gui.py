@@ -207,7 +207,7 @@ def _load_schedules_from_xlsx(path: str):
         lower = [h.lower() for h in header]
         c_shift, c_prov = _find_candidate_columns(lower)
         if c_shift is None or c_prov is None:
-            continue
+            continue 
 
         # read rows
         first = True
@@ -1260,7 +1260,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         model.Add(i == solver.Value(i))
 
     # soft penalty 
-    Weighted = model.NewIntVar(0, 1000000000000000000, "Weighted")
+    Weighted = model.NewIntVar(-1000000000000000000, 1000000000000000000, "Weighted")
 
     shifts_by_type = {t: [s for s in S if shift_type[s] == t] for t in types}
     for t in shifts_by_type:
@@ -1439,37 +1439,37 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     deviations = model.NewIntVar(0, 5000, "deviation")
     #model.Add(av_target * len(P) <= s)
     #model.Add((av_target + 1) * len(P) >= s)
-    model.Add(av_target == nshifts // len(providers))
+    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
+    model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))))
+    model.AddDivisionEquality(av_target, total_taken, len(P))
     personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
     provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
     for i in P:
         model.Add(provider_taken[i] == sum([x[s, i] for s in S]))
-    slack_unfairness_more = [model.NewIntVar(0, 40, "slack_unfairness_more_%d" % j) for j in P]
-    slack_unfairness_less = [model.NewIntVar(0, 40, "slack_unfairness_less_%d" % j) for j in P]
-    constant_absolutely_horrible = 1000000000000
+    constant_absolutely_horrible = 1000000000000000
     absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
     abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
     absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    los = [model.NewIntVar(0, 50, "los%d" % j) for j in P]
     for j in P:
-
         lim = providers[j].get('limits', {}) or {}
         mn = lim.get("min_total", 0)
-        mx = lim.get("max_total", None)
-        model.Add(personal_target[j] <= mx)
-        model.Add(personal_target[j] >= mn)
+        mx = lim.get("max_total", 31)
         model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
         model.AddAbsEquality(abst[j], personal_target[j] - av_target)
+        model.AddMaxEquality(los[j], [mn, av_target])
+        model.AddMinEquality(personal_target[j], [los[j], mx])
         model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
         model.Add(deviations >= absvsq[j])
+    model.Add(deviations < 16)
     within_diff = model.NewIntVar(0, 1000, "within_diff")
     model.Add(within_diff == sum(absvsq))
-    model.Add(Weighted == constant_absolutely_horrible * sum(abst) +
-                            cclusters * sum(cluster_square) +
-                            c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
+    model.Add(Weighted ==   cclusters * sum(cluster_square) +
+                            c_cluster_size * sum(cluster_cubesums) +   
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
-                            c_soft_off * sum(soft_off_i) + 
-                            1000000000 * deviations + 
+                            c_soft_off * sum(soft_off_i) - 
+                            100000000000 * total_taken + 
                             ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
     print(count_horrible)
     model.minimize(Weighted)
