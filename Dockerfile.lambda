@@ -1,0 +1,23 @@
+# Dockerfile for AWS Lambda deployment of scheduling solver
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install system dependencies
+RUN yum install -y gcc gcc-c++ && yum clean all
+
+# Copy requirements
+COPY requirements-solver.txt ${LAMBDA_TASK_ROOT}/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements-solver.txt
+
+# Copy solver code
+COPY fastapi_solver_service.py ${LAMBDA_TASK_ROOT}/
+COPY local_solver.py ${LAMBDA_TASK_ROOT}/
+COPY local_solver_backup.py ${LAMBDA_TASK_ROOT}/
+COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
+
+# Create output directory
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/solver_output
+
+# Set the Lambda handler
+CMD ["lambda_handler.handler"]

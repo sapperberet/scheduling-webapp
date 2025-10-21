@@ -152,10 +152,16 @@ thread_pool = ThreadPoolExecutor(max_workers=4)
 
 class AdvancedSchedulingSolver:
     def __init__(self):
-        # Prefer the workspace-level solver_output (one level above scheduling-webapp)
-        # so FastAPI shares the same Result_N folders produced by serverless and conversions.
-        repo_root = Path(__file__).resolve().parent.parent
-        self.output_dir = repo_root / "solver_output"
+        # Use /tmp for Lambda (read-only /var/task), local solver_output otherwise
+        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+            # Lambda environment - use writable /tmp directory
+            self.output_dir = Path("/tmp/solver_output")
+            logger.info("Running in AWS Lambda - using /tmp for outputs")
+        else:
+            # Local environment - prefer the workspace-level solver_output
+            # so FastAPI shares the same Result_N folders produced by serverless and conversions.
+            repo_root = Path(__file__).resolve().parent.parent
+            self.output_dir = repo_root / "solver_output"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Using solver output directory: {self.output_dir}")
         # Note for maintainers:

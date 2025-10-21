@@ -42,3 +42,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+LAMBDA_DEPLOYMENT_COMPLETE.md
