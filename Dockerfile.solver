@@ -1,0 +1,36 @@
+# Dockerfile for AWS ECS/Fargate deployment of scheduling solver
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements-solver.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements-solver.txt
+
+# Copy solver code
+COPY fastapi_solver_service.py .
+COPY local_solver.py .
+COPY local_solver_backup.py .
+
+# Create output directory
+RUN mkdir -p /app/solver_output
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run FastAPI with uvicorn
+CMD ["uvicorn", "fastapi_solver_service:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

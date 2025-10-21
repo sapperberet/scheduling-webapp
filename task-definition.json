@@ -1,0 +1,43 @@
+{
+  "family": "scheduling-solver-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::433864970068:role/ecsTaskExecutionRole-scheduling",
+  "containerDefinitions": [
+    {
+      "name": "scheduling-solver",
+      "image": "433864970068.dkr.ecr.us-east-1.amazonaws.com/scheduling-solver:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/scheduling-solver",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      },
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "8000"
+        }
+      ]
+    }
+  ]
+}

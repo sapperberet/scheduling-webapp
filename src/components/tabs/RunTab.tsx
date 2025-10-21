@@ -536,7 +536,7 @@ export default function RunTab() {
     return false;
   };
 
-  const handleRunSolver = async (solverMode: 'auto' | 'local' | 'serverless' = 'auto') => {
+  const handleRunSolver = async (solverMode: 'auto' | 'local' | 'serverless' | 'aws' = 'auto') => {
     if (isRunning) return;
     let actualSolver = 'unknown';
     
@@ -574,23 +574,33 @@ export default function RunTab() {
     // Determine which solver to use
     let shouldTryLocal = false;
     let shouldTryServerless = true;
+    let shouldTryAWS = false;
     
     switch (solverMode) {
       case 'local':
         shouldTryLocal = true;
         shouldTryServerless = false;
-  addLog('[RUN] Starting LOCAL high-performance optimization...', 'info');
+        shouldTryAWS = false;
+        addLog('[RUN] Starting LOCAL high-performance optimization...', 'info');
+        break;
+      case 'aws':
+        shouldTryLocal = false;
+        shouldTryServerless = false;
+        shouldTryAWS = true;
+        addLog('[RUN] Starting AWS CLOUD optimization...', 'info');
         break;
       case 'serverless':
         shouldTryLocal = false;
         shouldTryServerless = true;
-  addLog('[RUN] Starting SERVERLESS optimization...', 'info');
+        shouldTryAWS = false;
+        addLog('[RUN] Starting SERVERLESS optimization...', 'info');
         break;
       case 'auto':
       default:
         shouldTryLocal = localSolverAvailable === true;
         shouldTryServerless = true;
-  addLog('[RUN] Starting optimization (auto-detect mode)...', 'info');
+        shouldTryAWS = false;
+        addLog('[RUN] Starting optimization (auto-detect mode)...', 'info');
         break;
     }
     
@@ -752,9 +762,51 @@ export default function RunTab() {
         }
       }
       
-      // Try serverless if local failed or not requested
+      // Try AWS cloud solver if requested
+      if (!result && shouldTryAWS) {
+        addLog('[CONNECT] Connecting to AWS cloud solver...', 'info');
+        
+        const AWS_SOLVER_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+        
+        if (!AWS_SOLVER_URL) {
+          addLog('[ERROR] AWS solver URL not configured. Please set NEXT_PUBLIC_AWS_SOLVER_URL environment variable.', 'error');
+          throw new Error('AWS solver URL not configured');
+        }
+        
+        try {
+          const awsResponse = await fetch(`${AWS_SOLVER_URL}/solve`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(process.env.NEXT_PUBLIC_AWS_API_KEY ? { 'x-api-key': process.env.NEXT_PUBLIC_AWS_API_KEY } : {})
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(20000000), // 4 hour timeout for AWS
+          });
+
+          if (awsResponse.ok) {
+            result = await awsResponse.json();
+            addLog('[SUCCESS] Using AWS CLOUD solver', 'success');
+            actualSolver = 'aws';
+          } else {
+            const errorData = await awsResponse.json().catch(() => ({}));
+            throw new Error(errorData.message || `AWS solver returned ${awsResponse.status}`);
+          }
+        } catch (awsError) {
+          const errorMsg = awsError instanceof Error ? awsError.message : 'Unknown error';
+          addLog(`[ERROR] AWS cloud solver failed: ${errorMsg}`, 'error');
+          
+          if (!shouldTryServerless) {
+            throw new Error(`AWS solver required but failed: ${errorMsg}`);
+          }
+          
+          addLog('[WARN] Falling back to serverless solver...', 'warning');
+        }
+      }
+      
+      // Try serverless if local/AWS failed or not requested
       if (!result && shouldTryServerless) {
-  addLog('[CONNECT] Connecting to serverless solver...', 'info');
+        addLog('[CONNECT] Connecting to serverless solver...', 'info');
         
         const serverlessResponse = await fetch('/api/solve?mode=serverless', {
           method: 'POST',
@@ -2066,12 +2118,12 @@ export default function RunTab() {
           </h2>
         </div>
         {/* Enhanced Solver Mode Selection */}
-  <div className="grid grid-cols-1 gap-4 lg:grid-cols-1 mb-6 ">
+  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-6">
           {/* Smart Run Button (Auto-detect) */}
           
 
           {/* Local Solver Button */}
-          <div className="flex alg flex-col ">
+          <div className="flex alg flex-col">
             <button
               onClick={() => handleRunSolver('local')}
               disabled={isRunning || !localSolverAvailable || !isMonthSelectionLocked}
@@ -2082,7 +2134,7 @@ export default function RunTab() {
                     ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-600 text-white hover:from-orange-600 hover:via-red-600 hover:to-pink-700 hover:scale-[1.02] transform'
                     : 'bg-gradient-to-br from-gray-400 to-gray-500 text-white opacity-60 cursor-not-allowed'
               } backdrop-blur-sm border border-white/20 dark:border-gray-700/50`}
-              title={localSolverAvailable ? 'Run with local high-performance solver (10-100x faster)' : 'Local server not running - use Smart Run instead or start server manually'}
+              title={localSolverAvailable ? 'Run with local high-performance solver (10-100x faster)' : 'Local server not running - use AWS Cloud instead or start server manually'}
             >
               {/* Animated background glow - only when available */}
               {localSolverAvailable && !isRunning && (
@@ -2100,7 +2152,7 @@ export default function RunTab() {
                 </div>
                 <span className="font-bold">Local</span>
                 <span className="text-xs opacity-90 font-medium">
-                  {localSolverAvailable ? '(10-100x faster)' : '(Run the .bat or the .sh to Activate)'}
+                  {localSolverAvailable ? '(10-100x faster)' : '(Run .bat/.sh to Activate)'}
                 </span>
               </div>
             </button>
@@ -2118,6 +2170,48 @@ export default function RunTab() {
                   <span>Not Running</span>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* AWS Cloud Solver Button */}
+          <div className="flex flex-col">
+            <button
+              onClick={() => handleRunSolver('aws')}
+              disabled={isRunning || !isMonthSelectionLocked}
+              className={`relative px-6 py-4 rounded-2xl font-bold text-base flex flex-col items-center justify-center space-y-2 transition-all duration-300 shadow-lg hover:shadow-2xl overflow-hidden group min-h-[120px] ${
+                isRunning
+                  ? 'bg-gray-400 text-white cursor-not-allowed'
+                  : 'bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 text-white hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 hover:scale-[1.02] transform'
+              } backdrop-blur-sm border border-white/20 dark:border-gray-700/50`}
+              title="Run with AWS cloud solver (scalable, always available)"
+            >
+              {/* Animated background glow */}
+              {!isRunning && (
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 via-indigo-400/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              )}
+              
+              {/* Shimmer effect */}
+              {!isRunning && (
+                <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/10 to-transparent transform skew-x-12"></div>
+              )}
+              
+              <div className="relative z-10 flex flex-col items-center space-y-2">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                  <IoCloudSharp className="w-6 h-6" />
+                </div>
+                <span className="font-bold">AWS Cloud</span>
+                <span className="text-xs opacity-90 font-medium">
+                  (Scalable & Always On)
+                </span>
+              </div>
+            </button>
+            
+            {/* Status indicator */}
+            <div className="mt-2 text-center">
+              <div className="inline-flex items-center space-x-1 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium">
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                <span>Cloud Ready</span>
+              </div>
             </div>
           </div>
 
