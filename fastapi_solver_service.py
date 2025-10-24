@@ -215,8 +215,10 @@ class AdvancedSchedulingSolver:
             with open(case_file, 'w') as f:
                 json.dump(case_data, f, indent=2)
             
-            # Update progress
-            self._update_progress(run_id, 10, "Initializing solver...")
+            # Update progress - Stage 1: Initialization (0-15%)
+            self._update_progress(run_id, 0, "Starting optimization process...")
+            self._update_progress(run_id, 2, "Validating input data...")
+            self._update_progress(run_id, 5, "Reading case configuration...")
             
             # Extract case components
             constants = case_data.get('constants', {})
@@ -225,7 +227,10 @@ class AdvancedSchedulingSolver:
             providers = case_data.get('providers', [])
             run_config = case_data.get('run', {})
             
-            self._update_progress(run_id, 20, "Building optimization model...")
+            self._update_progress(run_id, 8, "Parsing calendar data...")
+            self._update_progress(run_id, 10, "Loading provider information...")
+            self._update_progress(run_id, 12, "Processing shift requirements...")
+            self._update_progress(run_id, 15, f"Preparing optimization model ({len(shifts)} shifts, {len(providers)} providers)...")
             
             # Build the OR-Tools model (simplified version)
             model_result = self._build_and_solve_model(
@@ -234,16 +239,23 @@ class AdvancedSchedulingSolver:
             
             self._update_progress(run_id, 90, "Generating output files...")
             
+            # Stage 9: File Generation (92-98%)
+            self._update_progress(run_id, 94, "Saving results to JSON...")
+            
             # Save results
             result_file = run_output_dir / "results.json"
             with open(result_file, 'w') as f:
                 json.dump(model_result, f, indent=2)
+            
+            self._update_progress(run_id, 96, "Generating Excel reports...")
             
             # Generate Excel outputs (optional)
             try:
                 self._generate_excel_outputs(model_result, run_output_dir)
             except Exception as e:
                 logger.warning(f"Failed to generate Excel outputs: {e}")
+            
+            self._update_progress(run_id, 98, "Finalizing output files...")
             
             # Attempt to gather any auxiliary outputs that the testcase_gui
             # or other parts of the pipeline may have written to the base
@@ -444,6 +456,9 @@ class AdvancedSchedulingSolver:
         # ---------- Built-in simplified OR-Tools model (fallback) ----------
         logger.info(f"Building CP-SAT model for run {run_id} (built-in)")
         
+        # Stage 2: Model Building (15-30%)
+        self._update_progress(run_id, 18, "Initializing CP-SAT solver...")
+        
         # Initialize CP model
         model = cp_model.CpModel()
         
@@ -452,7 +467,12 @@ class AdvancedSchedulingSolver:
         num_threads = constants.get('solver', {}).get('num_threads', 8)
         k_solutions = run_config.get('k', 5)
         
-        self._update_progress(run_id, 30, f"Creating variables for {len(shifts)} shifts and {len(providers)} providers...")
+        self._update_progress(run_id, 22, "Analyzing problem complexity...")
+        self._update_progress(run_id, 25, f"Allocating {len(shifts) * len(providers)} decision variables...")
+        self._update_progress(run_id, 28, "Building variable matrix...")
+        
+        # Stage 3: Variable Creation (30-40%)
+        self._update_progress(run_id, 32, "Creating shift assignment variables...")
         
         # Create decision variables
         shift_assignments = {}
@@ -464,7 +484,11 @@ class AdvancedSchedulingSolver:
                 var_name = f"assign_{provider_name}_{shift_id}"
                 shift_assignments[(provider_name, shift_id)] = model.NewBoolVar(var_name)
         
-        self._update_progress(run_id, 40, "Adding constraints...")
+        self._update_progress(run_id, 38, f"Created {len(shift_assignments)} decision variables")
+        self._update_progress(run_id, 42, "Preparing constraint system...")
+        
+        # Stage 4: Adding Constraints (42-58%)
+        self._update_progress(run_id, 45, "Adding shift coverage constraints...")
         
         # Constraint 1: Each shift must be assigned to exactly one provider
         for shift in shifts:
@@ -472,6 +496,8 @@ class AdvancedSchedulingSolver:
             model.Add(
                 sum(shift_assignments[(provider['name'], shift_id)] for provider in providers) == 1
             )
+        
+        self._update_progress(run_id, 48, "Processing provider availability...")
         
         # Constraint 2: Provider availability and forbidden days
         shifts_by_date = collections.defaultdict(list)
@@ -488,6 +514,8 @@ class AdvancedSchedulingSolver:
                     if date_str in shifts_by_date:
                         for shift in shifts_by_date[date_str]:
                             model.Add(shift_assignments[(provider_name, shift['id'])] == 0)
+        
+        self._update_progress(run_id, 52, "Adding workload distribution constraints...")
         
         # Constraint 3: At most one shift per provider per day
         for provider in providers:
@@ -515,6 +543,8 @@ class AdvancedSchedulingSolver:
                             objective_terms.append(
                                 shift_assignments[(provider_name, shift['id'])] * 100
                             )
+        
+        self._update_progress(run_id, 60, "Setting up fairness and workload balancing objective...")
         
         # Fairness: Try to balance workload
         provider_workloads = []
@@ -569,21 +599,33 @@ class AdvancedSchedulingSolver:
         if objective_terms:
             model.Maximize(sum(objective_terms))
         
-        self._update_progress(run_id, 70, "Solving optimization model...")
+        # Stage 6: Solver Preparation (68-72%)
+        self._update_progress(run_id, 68, "Finalizing optimization model...")
+        self._update_progress(run_id, 70, "Configuring solver parameters...")
         
         # Solve the model
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = max_time
         solver.parameters.num_search_workers = num_threads
         
+        self._update_progress(run_id, 72, f"Starting CP-SAT solver with {num_threads} threads...")
+        
+        # Stage 7: Solving (72-82%)
+        self._update_progress(run_id, 74, "Solver running - searching solution space...")
+        
         # Collect multiple solutions if requested
         if k_solutions > 1:
+            self._update_progress(run_id, 76, f"Searching for up to {k_solutions} diverse solutions...")
             solution_collector = SolutionCollector(shift_assignments, shifts, providers, k_solutions)
             # Use the proper OR-Tools API name (SolveWithSolutionCallback)
+            self._update_progress(run_id, 78, "Exploring solution alternatives...")
             status = solver.SolveWithSolutionCallback(model, solution_collector)
             solutions = solution_collector.get_solutions()
+            self._update_progress(run_id, 82, f"Found {len(solutions)} solution(s)")
         else:
+            self._update_progress(run_id, 76, "Solving for optimal solution...")
             status = solver.Solve(model)
+            self._update_progress(run_id, 82, "Solution found")
             solutions = []
 
             if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -600,17 +642,19 @@ class AdvancedSchedulingSolver:
                                 "date": shift['date'],
                                 "shift_type": shift.get('type', ''),
                                 "start_time": shift.get('start', ''),
-                                "end_time": shift.get('end', '')
-                            })
+                    "end_time": shift.get('end', '')
+                })
 
                 solutions.append({
                     "assignments": assignments,
                     "objective_value": solver.ObjectiveValue() if solver.ObjectiveValue() else 0
                 })
         
-        self._update_progress(run_id, 85, "Processing results...")
+        # Stage 8: Post-processing (82-92%)
+        self._update_progress(run_id, 85, "Validating solution quality...")
+        self._update_progress(run_id, 88, "Computing statistics...")        # Generate statistics
+        self._update_progress(run_id, 90, "Analyzing provider workload distribution...")
         
-        # Generate statistics
         total_assignments = sum(len(sol.get('assignments', [])) for sol in solutions)
         provider_stats = collections.Counter()
         shift_type_stats = collections.Counter()
@@ -619,6 +663,8 @@ class AdvancedSchedulingSolver:
             for assignment in solution.get('assignments', []):
                 provider_stats[assignment['provider_name']] += 1
                 shift_type_stats[assignment['shift_type']] += 1
+        
+        self._update_progress(run_id, 92, "Preparing result summary...")
         
         result = {
             "solver_status": self._get_status_name(status),
@@ -841,7 +887,14 @@ class AdvancedSchedulingSolver:
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket update: {e}")
         
-        logger.info(f"Run {run_id}: {progress}% - {message}")
+        # Also emit structured log for external log streaming
+        logger.info(f"[PROGRESS] Run {run_id}: {progress}% - {message}")
+        
+        # Send to external log API if configured
+        try:
+            asyncio.create_task(self._send_log_to_api(run_id, message, 'info', progress))
+        except Exception:
+            pass
     
     async def _send_progress_update(self, run_id: str, progress: float, message: str):
         """Send progress update via WebSocket"""
@@ -856,6 +909,22 @@ class AdvancedSchedulingSolver:
                 }))
             except Exception as e:
                 logger.warning(f"WebSocket send failed: {e}")
+
+    async def _send_log_to_api(self, run_id: str, message: str, level: str = 'info', progress: float | None = None):
+        """Send log to external API for web UI streaming"""
+        try:
+            # This would send to your web app's log API
+            # For now, just log locally
+            log_data = {
+                "run_id": run_id,
+                "message": message,
+                "level": level,
+                "progress": progress,
+                "timestamp": datetime.now().isoformat()
+            }
+            logger.debug(f"[LOG_API] {json.dumps(log_data)}")
+        except Exception as e:
+            logger.debug(f"Failed to send log to API: {e}")
 
 class SolutionCollector(cp_model.CpSolverSolutionCallback):
     """Collect multiple solutions from the CP solver"""

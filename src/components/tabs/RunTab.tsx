@@ -28,6 +28,7 @@ import {
 } from 'react-icons/si';
 import LocalSolverGuideModal from '@/components/LocalSolverGuideModal';
 import DataManagementModal from '@/components/DataManagementModal';
+import ResultsManager from '@/components/ResultsManager';
 import { generateMonth, getMonthRange } from '@/lib/scheduling';
 import { Provider, SchedulingCase } from '@/types/scheduling';
 
@@ -72,6 +73,7 @@ export default function RunTab() {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([`${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`]);
   const [solverState, setSolverState] = useState<'ready' | 'connecting' | 'running' | 'finished' | 'error'>('ready');
+  const [runId, setRunId] = useState<string | null>(null);
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
@@ -93,6 +95,7 @@ export default function RunTab() {
   const [isCheckingInstallation, setIsCheckingInstallation] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showDataManagementModal, setShowDataManagementModal] = useState(false);
+  const [showResultsManager, setShowResultsManager] = useState(false);
   const [guidePlatform, setGuidePlatform] = useState<'windows' | 'mac' | 'linux'>('windows');
   // Month selector state (for Run Settings)
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
@@ -245,6 +248,32 @@ export default function RunTab() {
       });
     }
   }, [addLog]);
+
+  // Real-time log streaming from AWS solver
+  useEffect(() => {
+    if (!runId) return;
+
+    const eventSource = new EventSource(`/api/logs/${runId}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'log') {
+          addLog(data.message, data.level || 'info');
+        }
+      } catch (error) {
+        console.error('Failed to parse log event:', error);
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [runId, addLog]);
 
   // Installation status management functions
   const STORAGE_KEY = 'localSolverInstallationStatus';
@@ -765,6 +794,10 @@ export default function RunTab() {
       // Try AWS cloud solver if requested
       if (!result && shouldTryAWS) {
         addLog('[CONNECT] Connecting to AWS cloud solver...', 'info');
+        
+        // Generate a unique run ID for log streaming
+        const currentRunId = `run_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        setRunId(currentRunId);
         
         const AWS_SOLVER_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
         
@@ -2274,6 +2307,16 @@ export default function RunTab() {
             <span className="relative z-10">Clear Logs</span>
           </button>
 
+          {/* View Past Results */}
+          <button
+            onClick={() => setShowResultsManager(true)}
+            className="relative px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <IoFolderOpenSharp className="w-5 h-5 relative z-10" />
+            <span className="relative z-10">View Past Results</span>
+          </button>
+
           {/* Data Management */}
           {/* <button
             onClick={() => setShowDataManagementModal(true)}
@@ -2302,7 +2345,42 @@ export default function RunTab() {
               />
             </div>
             <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 text-center">
-              [INFO] Optimization in progress...
+              {progress < 2 ? '[INIT] Starting optimization engine...' :
+               progress < 5 ? '[INIT] Loading solver configuration...' :
+               progress < 8 ? '[INIT] Validating input data...' :
+               progress < 10 ? '[INIT] Preparing optimization environment...' :
+               progress < 12 ? '[INIT] Initializing constraints system...' :
+               progress < 15 ? '[INIT] Setting up optimization parameters...' :
+               progress < 18 ? '[BUILD] Creating optimization model...' :
+               progress < 22 ? '[BUILD] Configuring solver settings...' :
+               progress < 25 ? '[BUILD] Building constraint framework...' :
+               progress < 28 ? '[BUILD] Preparing model structure...' :
+               progress < 32 ? '[VAR] Generating decision variables...' :
+               progress < 38 ? '[VAR] Creating shift assignment variables...' :
+               progress < 42 ? '[VAR] Building variable relationships...' :
+               progress < 45 ? '[CONST] Adding capacity constraints...' :
+               progress < 48 ? '[CONST] Enforcing shift requirements...' :
+               progress < 52 ? '[CONST] Setting provider limits...' :
+               progress < 56 ? '[CONST] Adding schedule constraints...' :
+               progress < 60 ? '[CONST] Finalizing constraint system...' :
+               progress < 62 ? '[OBJ] Defining optimization objective...' :
+               progress < 65 ? '[OBJ] Setting optimization goals...' :
+               progress < 68 ? '[PREP] Configuring solver parameters...' :
+               progress < 70 ? '[PREP] Optimizing search strategy...' :
+               progress < 72 ? '[PREP] Preparing solver execution...' :
+               progress < 74 ? '[SOLVE] Starting constraint solver...' :
+               progress < 76 ? '[SOLVE] Searching for solutions...' :
+               progress < 78 ? '[SOLVE] Evaluating candidates...' :
+               progress < 82 ? '[SOLVE] Optimizing assignments...' :
+               progress < 85 ? '[POST] Processing solutions...' :
+               progress < 88 ? '[POST] Validating results...' :
+               progress < 90 ? '[POST] Calculating statistics...' :
+               progress < 92 ? '[POST] Preparing output data...' :
+               progress < 94 ? '[FILE] Generating schedule files...' :
+               progress < 96 ? '[FILE] Creating result documents...' :
+               progress < 98 ? '[FILE] Saving output files...' :
+               progress < 100 ? '[FINAL] Completing optimization...' :
+               '[DONE] Optimization complete!'}
             </div>
           </div>
         )}
@@ -2493,6 +2571,12 @@ export default function RunTab() {
           </div>
         </div>
       )}
+
+      {/* Results Manager Modal */}
+      <ResultsManager
+        isOpen={showResultsManager}
+        onClose={() => setShowResultsManager(false)}
+      />
     </div>
   );
 }
