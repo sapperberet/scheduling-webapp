@@ -15,9 +15,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { runId: string } }
+  { params }: { params: Promise<{ runId: string }> }
 ) {
-  const runId = params.runId;
+  const { runId } = await params;
 
   // Set up Server-Sent Events (SSE) headers
   const encoder = new TextEncoder();
@@ -105,9 +105,9 @@ export async function GET(
 // POST endpoint to add logs from solvers
 export async function POST(
   request: NextRequest,
-  { params }: { params: { runId: string } }
+  { params }: { params: Promise<{ runId: string }> }
 ) {
-  const runId = params.runId;
+  const { runId } = await params;
   
   try {
     const body = await request.json();
@@ -142,9 +142,9 @@ export async function POST(
 // DELETE endpoint to clear logs for a run
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { runId: string } }
+  { params }: { params: Promise<{ runId: string }> }
 ) {
-  const runId = params.runId;
+  const { runId } = await params;
   
   logStore.delete(runId);
   logSubscribers.delete(runId);

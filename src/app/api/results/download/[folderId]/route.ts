@@ -10,7 +10,7 @@ import { list } from '@vercel/blob';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { folderId: string } }
+  { params }: { params: Promise<{ folderId: string }> }
 ) {
   // Verify authentication
   const token = await verifyAuth(request);
@@ -18,7 +18,7 @@ export async function GET(
     return createAuthResponse('Authentication required');
   }
 
-  const folderId = params.folderId;
+  const { folderId } = await params;
 
   try {
     // Check if folder exists in Vercel Blob
