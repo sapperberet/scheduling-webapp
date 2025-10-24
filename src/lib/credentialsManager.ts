@@ -12,7 +12,11 @@ const CREDENTIALS_FILE = path.join(process.cwd(), '.credentials.json');
 
 // Check if we're running in a serverless environment
 const isServerlessEnvironment = () => {
-  return process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT;
+  return process.env.VERCEL || 
+         process.env.AWS_LAMBDA_FUNCTION_NAME || 
+         process.env.LAMBDA_TASK_ROOT ||
+         process.env.AWS_EXECUTION_ENV || // AWS Amplify/Lambda
+         process.env.NODE_ENV === 'production'; // Treat all production as serverless
 };
 
 // Initialize default credentials if file doesn't exist (local development only)
