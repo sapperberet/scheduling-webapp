@@ -151,18 +151,3 @@ export async function DELETE(
 
   return Response.json({ success: true, runId, message: 'Logs cleared' });
 }
-
-// Utility function to add log from server-side code
-export function addServerLog(runId: string, message: string, level: 'info' | 'warning' | 'error' | 'success' = 'info') {
-  const formattedLog = `[${level.toUpperCase()}] ${message}`;
-
-  if (!logStore.has(runId)) {
-    logStore.set(runId, []);
-  }
-  logStore.get(runId)!.push(formattedLog);
-
-  const subscribers = logSubscribers.get(runId);
-  if (subscribers) {
-    subscribers.forEach(subscriber => subscriber(formattedLog));
-  }
-}
