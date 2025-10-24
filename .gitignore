@@ -36,6 +36,9 @@ yarn-error.log*
 # credentials file
 .credentials.json
 
+# Amplify environment variables with secrets
+amplify-env-variables.json
+
 # vercel
 .vercel
 
