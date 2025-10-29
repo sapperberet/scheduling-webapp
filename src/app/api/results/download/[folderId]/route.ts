@@ -96,25 +96,84 @@ async function downloadFromAWS(folderId: string): Promise<NextResponse | null> {
       return null;
     }
 
-    const response = await fetch(`${AWS_LAMBDA_URL}/download/folder/${folderId}`, {
-      signal: AbortSignal.timeout(30000),
+    // First, get the list of runs to find the run_id for this folder
+    const runsResponse = await fetch(`${AWS_LAMBDA_URL}/runs`, {
+      signal: AbortSignal.timeout(5000),
     });
 
-    if (!response.ok) {
+    if (!runsResponse.ok) {
       return null;
     }
 
-    // Stream the ZIP from AWS to client
-    const zipData = await response.arrayBuffer();
+    const runsData = await runsResponse.json();
+    let targetRunId: string | null = null;
 
-    return new NextResponse(zipData, {
+    // Find the run_id that matches this folder
+    if (runsData.runs && Array.isArray(runsData.runs)) {
+      for (const run of runsData.runs) {
+        if (run.output_directory && run.output_directory.includes(folderId)) {
+          targetRunId = run.run_id;
+          break;
+        }
+      }
+    }
+
+    if (!targetRunId) {
+      console.error(`[AWS DOWNLOAD] No run found for folder ${folderId}`);
+      return null;
+    }
+
+    // Get the list of files for this run
+    const filesResponse = await fetch(`${AWS_LAMBDA_URL}/output/${targetRunId}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!filesResponse.ok) {
+      return null;
+    }
+
+    const filesData = await filesResponse.json();
+    
+    if (!filesData.files || filesData.files.length === 0) {
+      console.error(`[AWS DOWNLOAD] No files found for run ${targetRunId}`);
+      return null;
+    }
+
+    // Create ZIP archive in memory using all files
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+
+    // Download each file and add to ZIP
+    await Promise.all(
+      filesData.files.map(async (file: { name: string }) => {
+        try {
+          const fileResponse = await fetch(
+            `${AWS_LAMBDA_URL}/download/${targetRunId}/${file.name}`,
+            { signal: AbortSignal.timeout(30000) }
+          );
+
+          if (fileResponse.ok) {
+            const content = await fileResponse.arrayBuffer();
+            zip.file(file.name, content);
+          }
+        } catch (error) {
+          console.error(`Failed to download ${file.name}:`, error);
+        }
+      })
+    );
+
+    // Generate ZIP
+    const zipBlob = await zip.generateAsync({ type: 'arraybuffer' });
+
+    return new NextResponse(zipBlob, {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="${folderId}.zip"`,
       },
     });
 
-  } catch {
+  } catch (error) {
+    console.error('[AWS DOWNLOAD] Error:', error);
     return null;
   }
 }

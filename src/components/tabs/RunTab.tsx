@@ -69,8 +69,23 @@ export default function RunTab() {
   const { state, dispatch } = useScheduling();
   const { setResults: setSchedulingResults } = useSchedulingResults();
   const { case: schedulingCase, lastResults } = state;
-  const [isRunning, setIsRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
+  
+  // Persist solver state in localStorage (task-oriented, survives page refresh)
+  const [isRunning, setIsRunning] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('solver-running');
+      return saved === 'true';
+    }
+    return false;
+  });
+  
+  const [progress, setProgress] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('solver-progress');
+      return saved ? parseInt(saved, 10) : 0;
+    }
+    return 0;
+  });
   
   // Persist logs in localStorage
   const [logs, setLogs] = useState<string[]>(() => {
@@ -87,11 +102,37 @@ export default function RunTab() {
     return [`${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`];
   });
   
-  const [solverState, setSolverState] = useState<'ready' | 'connecting' | 'running' | 'finished' | 'error'>('ready');
+  const [solverState, setSolverState] = useState<'ready' | 'connecting' | 'running' | 'finished' | 'error'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('solver-state') as 'ready' | 'connecting' | 'running' | 'finished' | 'error' | null;
+      return saved || 'ready';
+    }
+    return 'ready';
+  });
   const [runId, setRunId] = useState<string | null>(null);
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
+  
+  // Sync state to localStorage whenever it changes (task-oriented persistence)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solver-running', String(isRunning));
+    }
+  }, [isRunning]);
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solver-progress', String(progress));
+    }
+  }, [progress]);
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solver-state', solverState);
+    }
+  }, [solverState]);
+  
   const [installationStatus, setInstallationStatus] = useState<{
     checked: boolean;
     filesInstalled: boolean;

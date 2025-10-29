@@ -118,7 +118,9 @@ async function listAWSResults(): Promise<string[]> {
       return [];
     }
 
-    const response = await fetch(`${AWS_LAMBDA_URL}/results/folders`, {
+    // The AWS Lambda uses /runs endpoint, not /results/folders
+    // We need to get runs and extract their output directories
+    const response = await fetch(`${AWS_LAMBDA_URL}/runs`, {
       signal: AbortSignal.timeout(5000),
     });
 
@@ -127,7 +129,20 @@ async function listAWSResults(): Promise<string[]> {
     }
 
     const data = await response.json();
-    return data.folders?.map((f: { name: string }) => f.name) || [];
+    // Extract folder names from runs that have output directories
+    const folders: string[] = [];
+    if (data.runs && Array.isArray(data.runs)) {
+      data.runs.forEach((run: { output_directory?: string }) => {
+        if (run.output_directory) {
+          // Extract Result_N from output_directory path
+          const match = run.output_directory.match(/Result_\d+/);
+          if (match && !folders.includes(match[0])) {
+            folders.push(match[0]);
+          }
+        }
+      });
+    }
+    return folders;
   } catch {
     // AWS not available, return empty
     return [];
