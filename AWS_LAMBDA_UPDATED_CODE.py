@@ -1,4 +1,4 @@
-"""
+"""MD
 AWS Lambda Solver Function - UPDATED VERSION
 Async execution with progress tracking and S3 storage
 
@@ -162,14 +162,60 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
         active_runs[run_id]["status"] = "running"
         update_progress(run_id, 2, "Validating input...")
         
-        # Import your actual solver logic here
-        # For now, using placeholder
-        from your_solver_module import solve_scheduling_case
+        # Import the actual solver logic
+        import testcase_gui
         
         update_progress(run_id, 10, "Preparing optimization model...")
         
-        # Run the actual solver
-        result = solve_scheduling_case(case_data, run_id, update_progress)
+        # Save case to temp file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+            json.dump(case_data, tmp)
+            tmp_path = tmp.name
+        
+        try:
+            update_progress(run_id, 20, "Running optimization solver...")
+            
+            # Run the solver
+            tables, meta = testcase_gui.Solve_test_case(tmp_path)
+            
+            update_progress(run_id, 70, "Processing solutions...")
+            
+            # Convert to expected format
+            solutions = []
+            for i, table_data in enumerate(tables):
+                assignments = []
+                for (s_idx, p_idx) in table_data.get('assignment', []):
+                    shift = table_data['shifts'][s_idx]
+                    provider = table_data['providers'][p_idx]
+                    assignments.append({
+                        "shift_id": shift['id'],
+                        "provider_name": provider['name'],
+                        "date": shift['date'],
+                        "shift_type": shift.get('type', ''),
+                        "start_time": shift.get('start', ''),
+                        "end_time": shift.get('end', '')
+                    })
+                
+                objective = (meta.get('per_table', [])[i].get('objective') 
+                           if i < len(meta.get('per_table', [])) else 0)
+                
+                solutions.append({
+                    "assignments": assignments,
+                    "objective_value": objective
+                })
+            
+            result = {
+                'status': 'completed',
+                'solutions': solutions,
+                'solver_stats': meta.get('phase2', {})
+            }
+            
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
         
         update_progress(run_id, 90, "Uploading results to S3...")
         

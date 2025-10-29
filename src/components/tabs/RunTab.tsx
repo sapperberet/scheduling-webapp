@@ -71,7 +71,22 @@ export default function RunTab() {
   const { case: schedulingCase, lastResults } = state;
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [logs, setLogs] = useState<string[]>([`${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`]);
+  
+  // Persist logs in localStorage
+  const [logs, setLogs] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('solver-logs');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return [`${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`];
+        }
+      }
+    }
+    return [`${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`];
+  });
+  
   const [solverState, setSolverState] = useState<'ready' | 'connecting' | 'running' | 'finished' | 'error'>('ready');
   const [runId, setRunId] = useState<string | null>(null);
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
@@ -171,7 +186,23 @@ export default function RunTab() {
     // If message already contains a bracketed level like [SUCCESS], don't duplicate
     const sanitizedMessage = message.match(/^\[.*\]\s*/)? message.replace(/^\[.*?\]\s*/, '') : message;
 
-    setLogs(prev => [...prev, `${timestamp} ${prefix} ${sanitizedMessage}`]);
+    setLogs(prev => {
+      const newLogs = [...prev, `${timestamp} ${prefix} ${sanitizedMessage}`];
+      // Save to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('solver-logs', JSON.stringify(newLogs));
+      }
+      return newLogs;
+    });
+  }, []);
+
+  // Clear logs function
+  const clearLogs = useCallback(() => {
+    const initialLog = `${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`;
+    setLogs([initialLog]);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('solver-logs', JSON.stringify([initialLog]));
+    }
   }, []);
 
   // Check local solver availability on component mount
@@ -419,10 +450,6 @@ export default function RunTab() {
       // No cleanup needed for serverless approach
     };
   }, []);
-
-  const clearLogs = () => {
-    setLogs([]);
-  };
 
   // WebSocket and polling functions removed for serverless approach
   

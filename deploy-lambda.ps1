@@ -1,18 +1,16 @@
 # AWS Lambda Deployment Script for Scheduling Solver
-# This script deploys the solver as a Lambda function with API Gateway
-# Cost: ~$0.15/month for typical usage (200x cheaper than ECS)
+# UPDATED VERSION - Deploys async solver with progress tracking
 
-Write-Host "================================" -ForegroundColor Cyan
-Write-Host "Lambda Solver Deployment" -ForegroundColor Cyan
-Write-Host "================================" -ForegroundColor Cyan
+Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║     AWS Lambda Deployment - Async Solver               ║" -ForegroundColor Cyan
+Write-Host "╚════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
 
 $ErrorActionPreference = "Continue"
 
-# Configuration
+# Configuration  
 $REGION = "us-east-1"
 $FUNCTION_NAME = "scheduling-solver"
-$API_NAME = "scheduling-solver-api"
-$ROLE_NAME = "lambda-scheduling-solver-role"
+$S3_BUCKET = "scheduling-solver-results"
 
 Write-Host "`n[1/7] Getting AWS Account ID..." -ForegroundColor Yellow
 $ACCOUNT_ID = & 'C:\Program Files\Amazon\AWSCLIV2\aws.exe' sts get-caller-identity --query Account --output text
