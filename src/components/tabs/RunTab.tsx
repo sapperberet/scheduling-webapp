@@ -869,18 +869,67 @@ export default function RunTab() {
         }
         
         try {
-          const awsResponse = await fetch(`${AWS_SOLVER_URL}/solve`, {
+          // Use our Next.js API route that properly handles AWS
+          const awsResponse = await fetch('/api/aws-solve', {
             method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              ...(process.env.NEXT_PUBLIC_AWS_API_KEY ? { 'x-api-key': process.env.NEXT_PUBLIC_AWS_API_KEY } : {})
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(20000000), // 4 hour timeout for AWS
+            signal: AbortSignal.timeout(600000), // 10 minute timeout
           });
 
           if (awsResponse.ok) {
-            result = await awsResponse.json();
+            const awsResult = await awsResponse.json();
+            
+            // Check if AWS returned async response (with run_id and status)
+            if (awsResult.run_id && (awsResult.status === 'processing' || awsResult.status === 'accepted')) {
+              addLog('[INFO] AWS optimization started, polling for progress...', 'info');
+              
+              // Poll for status updates
+              const pollInterval = setInterval(async () => {
+                try {
+                  const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${awsResult.run_id}`);
+                  if (statusResponse.ok) {
+                    const status = await statusResponse.json();
+                    
+                    // Update progress
+                    if (status.progress !== undefined) {
+                      setProgress(status.progress);
+                      addLog(`[PROGRESS] ${status.progress}% - ${status.message || 'Processing...'}`, 'info');
+                    }
+                    
+                    // Check if completed
+                    if (status.status === 'completed') {
+                      clearInterval(pollInterval);
+                      clearInterval(progressInterval);
+                      result = status;
+                      addLog('[SUCCESS] AWS optimization completed', 'success');
+                    } else if (status.status === 'failed' || status.status === 'error') {
+                      clearInterval(pollInterval);
+                      clearInterval(progressInterval);
+                      throw new Error(status.error || 'AWS optimization failed');
+                    }
+                  }
+                } catch (pollError) {
+                  console.error('Status polling error:', pollError);
+                }
+              }, 2000); // Poll every 2 seconds
+              
+              // Wait for result (timeout after 10 minutes)
+              const maxWaitTime = 600000;
+              const startWait = Date.now();
+              while (!result && (Date.now() - startWait < maxWaitTime)) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+              
+              if (!result) {
+                clearInterval(pollInterval);
+                throw new Error('AWS optimization timed out');
+              }
+            } else {
+              // Synchronous response (old behavior)
+              result = awsResult;
+            }
+            
             addLog('[SUCCESS] Using AWS CLOUD solver', 'success');
             actualSolver = 'aws';
           } else {
