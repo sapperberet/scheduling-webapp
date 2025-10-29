@@ -15,7 +15,8 @@ import {
   IoFileTrayFullOutline,
   IoRefreshOutline,
   IoCloseOutline,
-  IoCheckmarkCircleOutline
+  IoCheckmarkCircleOutline,
+  IoTrashOutline
 } from 'react-icons/io5';
 
 interface ResultFolder {
@@ -38,6 +39,7 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
   const [folders, setFolders] = useState<ResultFolder[]>([]);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Load folders on mount
@@ -81,6 +83,12 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
 
       // Download as ZIP file
       const blob = await response.blob();
+      
+      // Check if blob is empty
+      if (blob.size === 0) {
+        throw new Error('Downloaded file is empty - results may not have been saved correctly');
+      }
+      
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -95,6 +103,36 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
       setError(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const deleteFolder = async (folderName: string) => {
+    if (!confirm(`Are you sure you want to delete ${folderName}? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(folderName);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/results/delete/${folderName}`, {
+        method: 'DELETE',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Delete failed');
+      }
+
+      // Remove from local state
+      setFolders(folders.filter(f => f.name !== folderName));
+
+    } catch (err) {
+      console.error('Error deleting:', err);
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -245,7 +283,7 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
                     <div className="flex flex-col space-y-2 ml-4">
                       <button
                         onClick={() => downloadFolder(folder.name)}
-                        disabled={downloading === folder.name}
+                        disabled={downloading === folder.name || deleting === folder.name}
                         className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg"
                       >
                         {downloading === folder.name ? (
@@ -257,6 +295,24 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
                           <>
                             <IoCloudDownloadOutline className="w-4 h-4" />
                             <span className="text-sm font-semibold">Download ZIP</span>
+                          </>
+                        )}
+                      </button>
+                      
+                      <button
+                        onClick={() => deleteFolder(folder.name)}
+                        disabled={downloading === folder.name || deleting === folder.name}
+                        className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg hover:from-red-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg"
+                      >
+                        {deleting === folder.name ? (
+                          <>
+                            <IoRefreshOutline className="w-4 h-4 animate-spin" />
+                            <span className="text-sm font-semibold">Deleting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <IoTrashOutline className="w-4 h-4" />
+                            <span className="text-sm font-semibold">Delete</span>
                           </>
                         )}
                       </button>

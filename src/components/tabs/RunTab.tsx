@@ -589,6 +589,14 @@ export default function RunTab() {
     setProgress(0);
     setSolverState('connecting');
 
+    // Start progress simulation for better UX
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 95) return 95; // Cap at 95% until completion
+        return prev + 1;
+      });
+    }, 3000); // Update every 3 seconds
+
     // Pre-flight: check requested output folder name for conflicts
     const requestedName = schedulingCase.run?.out || '';
     if (requestedName) {
@@ -864,9 +872,12 @@ export default function RunTab() {
       const executionTime = Date.now() - startTime;
       addLog(`[SUCCESS] Optimization completed in ${executionTime}ms using ${actualSolver.toUpperCase()} solver`, 'success');
       
+      // Clear progress interval and set to 100%
+      clearInterval(progressInterval);
+      setProgress(100);
+      
       if (result.status === 'completed') {
         setSolverState('finished');
-        setProgress(100);
         
         // Display results
         if (result.results && typeof result.results === 'object') {
@@ -995,11 +1006,17 @@ export default function RunTab() {
       
     } 
     catch (error: unknown) {
+    // Clear progress interval on error
+    clearInterval(progressInterval);
+    
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     addLog(`[ERROR] Optimization failed: ${errorMessage}`, 'error');
     setSolverState('error');
     setProgress(0);
 } finally {
+    // Ensure progress interval is always cleared
+    clearInterval(progressInterval);
+    
     setIsRunning(false);
     setSolverState((currentState) => {
         // If the state is still 'running' when the function is done,

@@ -11,7 +11,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth, createAuthResponse } from '@/lib/auth';
-import { put } from '@vercel/blob';
 
 interface AWSLambdaRequest {
   constants: Record<string, unknown>;
@@ -105,23 +104,9 @@ export async function POST(request: NextRequest) {
     console.log(`[AWS] Status: ${result.status}`);
     console.log(`[AWS] Progress: ${result.progress}%`);
 
-    // If Lambda provided results, persist them to Vercel Blob for redundancy
-    if (result.results && result.output_directory) {
-      try {
-        console.log('[STORAGE] Persisting results to Vercel Blob...');
-        
-        const resultPath = `aws-results/${result.output_directory}/results.json`;
-        await put(resultPath, JSON.stringify(result.results, null, 2), {
-          access: 'public',
-          contentType: 'application/json',
-        });
-
-        console.log(`[STORAGE] Results persisted to: ${resultPath}`);
-      } catch (storageError) {
-        console.error('[STORAGE] Failed to persist results:', storageError);
-        // Non-fatal - continue even if storage fails
-      }
-    }
+    // AWS Lambda stores results directly to S3
+    // No need to duplicate to Vercel Blob - AWS handles all storage
+    console.log('[AWS] Results stored in AWS S3 by Lambda function');
 
     return NextResponse.json({
       status: result.status,
@@ -129,14 +114,16 @@ export async function POST(request: NextRequest) {
       progress: result.progress,
       message: result.message,
       results: result.results,
-      output_directory: result.output_directory,
+      output_directory: result.output_directory, // Stored in AWS S3
       logs: result.logs || [],
       solver_type: 'aws_lambda',
       execution_mode: 'serverless',
+      storage_location: 'aws_s3',
       statistics: {
         platform: 'AWS Lambda',
         pricing_model: 'pay-per-execution',
         persistent: false, // Lambda terminates after execution
+        storage: 'AWS S3',
       }
     });
 
