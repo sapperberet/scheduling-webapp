@@ -925,6 +925,10 @@ export default function RunTab() {
       if (!result && shouldTryAWS) {
         addLog('[CONNECT] Connecting to AWS cloud solver...', 'info');
         
+        // Clear the generic progress interval for AWS - we'll use real progress
+        clearInterval(progressInterval);
+        setProgress(0);
+        
         // Generate a unique run ID for log streaming
         const currentRunId = `run_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         setRunId(currentRunId);
@@ -951,34 +955,43 @@ export default function RunTab() {
             // Check if AWS returned async response (with run_id and status)
             if (awsResult.run_id && (awsResult.status === 'processing' || awsResult.status === 'accepted')) {
               addLog('[INFO] AWS optimization started, polling for progress...', 'info');
+              setSolverState('running');
               
-              // Poll for status updates
-              const pollInterval = setInterval(async () => {
+              // Poll for status updates with real progress
+              let pollInterval: NodeJS.Timeout | null = null;
+              let lastProgress = 0;
+              
+              pollInterval = setInterval(async () => {
                 try {
                   const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${awsResult.run_id}`);
                   if (statusResponse.ok) {
                     const status = await statusResponse.json();
                     
-                    // Update progress
-                    if (status.progress !== undefined) {
-                      setProgress(status.progress);
-                      addLog(`[PROGRESS] ${status.progress}% - ${status.message || 'Processing...'}`, 'info');
+                    // Update progress with real data from AWS
+                    if (status.progress !== undefined && status.progress !== lastProgress) {
+                      lastProgress = status.progress;
+                      setProgress(Math.min(status.progress, 95));
+                      addLog(`[PROGRESS] ${Math.round(status.progress)}% - ${status.message || 'Processing...'}`, 'info');
+                    }
+                    
+                    // Log any status messages
+                    if (status.current_state && status.current_state !== 'running') {
+                      addLog(`[AWS] State: ${status.current_state}`, 'info');
                     }
                     
                     // Check if completed
                     if (status.status === 'completed') {
-                      clearInterval(pollInterval);
-                      clearInterval(progressInterval);
+                      if (pollInterval) clearInterval(pollInterval);
                       result = status;
                       addLog('[SUCCESS] AWS optimization completed', 'success');
                     } else if (status.status === 'failed' || status.status === 'error') {
-                      clearInterval(pollInterval);
-                      clearInterval(progressInterval);
+                      if (pollInterval) clearInterval(pollInterval);
                       throw new Error(status.error || 'AWS optimization failed');
                     }
                   }
                 } catch (pollError) {
                   console.error('Status polling error:', pollError);
+                  // Don't stop polling on individual errors - connection might be temporary
                 }
               }, 2000); // Poll every 2 seconds
               
@@ -989,13 +1002,17 @@ export default function RunTab() {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
               
+              if (pollInterval) clearInterval(pollInterval);
+              
               if (!result) {
-                clearInterval(pollInterval);
                 throw new Error('AWS optimization timed out');
               }
-            } else {
-              // Synchronous response (old behavior)
+            } else if (awsResult.status === 'completed' || awsResult.results) {
+              // Synchronous response - AWS completed immediately
               result = awsResult;
+              setProgress(100);
+            } else {
+              throw new Error('AWS returned unexpected response format');
             }
             
             addLog('[SUCCESS] Using AWS CLOUD solver', 'success');

@@ -1,12 +1,12 @@
 /**
  * Results Management API
  * 
- * List all Result_N folders stored on the server (AWS S3 or Vercel Blob)
+ * List all Result_N folders stored on AWS S3
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth, createAuthResponse } from '@/lib/auth';
-import { list } from '@vercel/blob';
+import { createAWSS3Storage } from '@/lib/aws-s3-storage';
 
 export async function GET(request: NextRequest) {
   // Verify authentication
@@ -16,56 +16,53 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // List all Result_N folders from Vercel Blob
-    const { blobs } = await list({ prefix: 'solver_output/Result_' });
+    // Get AWS S3 storage client
+    const s3Storage = createAWSS3Storage();
     
-    // Also check AWS results if configured
-    const awsResults = await listAWSResults();
-    
-    // Extract unique folder names
-    const folderSet = new Set<string>();
-    
-    // From Vercel Blob
-    blobs.forEach(blob => {
-      const match = blob.pathname.match(/^solver_output\/(Result_\d+)\//);
-      if (match) {
-        folderSet.add(match[1]);
-      }
-    });
+    if (!s3Storage) {
+      console.warn('[RESULTS] AWS S3 not configured');
+      return NextResponse.json({
+        success: true,
+        folders: [],
+        total: 0,
+        warning: 'AWS S3 not configured',
+      });
+    }
 
-    // From AWS (merged with local)
-    awsResults.forEach(folder => folderSet.add(folder));
+    // List all Result_N folders from AWS S3
+    const awsFolders = await s3Storage.listResultFolders();
     
-    // Convert to array and sort by number
-    const folders = Array.from(folderSet).sort((a, b) => {
+    console.log(`[RESULTS] Found ${awsFolders.length} folders in AWS S3`);
+    
+    // Sort by number (most recent first)
+    const folders = awsFolders.sort((a, b) => {
       const numA = parseInt(a.replace('Result_', ''));
       const numB = parseInt(b.replace('Result_', ''));
-      return numB - numA; // Most recent first
+      return numB - numA;
     });
 
     // Get metadata for each folder
     const foldersWithMetadata = await Promise.all(
       folders.map(async (folderName) => {
         try {
-          const files = blobs.filter(blob => 
-            blob.pathname.startsWith(`solver_output/${folderName}/`)
-          );
-
+          // List files in this folder from S3
+          const files = await s3Storage.listFolderFiles(folderName);
+          
           // Try to get results.json for metadata
-          const resultsBlob = files.find(f => f.pathname.endsWith('/results.json'));
+          const resultsFile = files.find(f => f.name.endsWith('results.json'));
           let metadata = {};
           
-          if (resultsBlob) {
+          if (resultsFile && resultsFile.url) {
             try {
-              const response = await fetch(resultsBlob.url);
+              const response = await fetch(resultsFile.url);
               const resultsData = await response.json();
               metadata = {
                 solutions: resultsData.solutions?.length || 0,
                 solver_type: resultsData.solver_stats?.solver_type || 'unknown',
                 execution_time: resultsData.solver_stats?.execution_time_ms || 0,
               };
-            } catch {
-              // Ignore metadata errors
+            } catch (err) {
+              console.warn(`[RESULTS] Could not fetch metadata for ${folderName}:`, err);
             }
           }
 
@@ -73,17 +70,18 @@ export async function GET(request: NextRequest) {
             name: folderName,
             fileCount: files.length,
             size: files.reduce((sum, f) => sum + f.size, 0),
-            created: files[0]?.uploadedAt || new Date().toISOString(),
-            storage: files.length > 0 ? 'vercel' : 'aws',
+            created: files[0]?.lastModified?.toISOString() || new Date().toISOString(),
+            storage: 'aws_s3',
             ...metadata,
           };
-        } catch {
+        } catch (err) {
+          console.error(`[RESULTS] Error processing folder ${folderName}:`, err);
           return {
             name: folderName,
             fileCount: 0,
             size: 0,
             created: new Date().toISOString(),
-            storage: 'aws',
+            storage: 'aws_s3',
           };
         }
       })
@@ -93,6 +91,7 @@ export async function GET(request: NextRequest) {
       success: true,
       folders: foldersWithMetadata,
       total: folders.length,
+      storage: 'aws_s3',
     });
 
   } catch (error) {
@@ -107,44 +106,5 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  }
-}
-
-// Helper function to list AWS S3 results (if configured)
-async function listAWSResults(): Promise<string[]> {
-  try {
-    const AWS_LAMBDA_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
-    if (!AWS_LAMBDA_URL) {
-      return [];
-    }
-
-    // The AWS Lambda uses /runs endpoint, not /results/folders
-    // We need to get runs and extract their output directories
-    const response = await fetch(`${AWS_LAMBDA_URL}/runs`, {
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data = await response.json();
-    // Extract folder names from runs that have output directories
-    const folders: string[] = [];
-    if (data.runs && Array.isArray(data.runs)) {
-      data.runs.forEach((run: { output_directory?: string }) => {
-        if (run.output_directory) {
-          // Extract Result_N from output_directory path
-          const match = run.output_directory.match(/Result_\d+/);
-          if (match && !folders.includes(match[0])) {
-            folders.push(match[0]);
-          }
-        }
-      });
-    }
-    return folders;
-  } catch {
-    // AWS not available, return empty
-    return [];
   }
 }

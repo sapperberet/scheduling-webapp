@@ -1,12 +1,12 @@
 /**
  * Delete Result Folder API
  * 
- * Delete a specific Result_N folder from storage
+ * Delete a specific Result_N folder from AWS S3 storage
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth, createAuthResponse } from '@/lib/auth';
-import { list, del } from '@vercel/blob';
+import { createAWSS3Storage } from '@/lib/aws-s3-storage';
 
 export async function DELETE(
   request: NextRequest,
@@ -21,63 +21,40 @@ export async function DELETE(
   const { folderId } = await params;
 
   try {
-    let deletedCount = 0;
-
-    // Delete from Vercel Blob
-    try {
-      const { blobs } = await list({ prefix: `solver_output/${folderId}/` });
-      
-      if (blobs.length > 0) {
-        // Delete all blobs in this folder
-        await Promise.all(
-          blobs.map(async (blob) => {
-            try {
-              await del(blob.url);
-              deletedCount++;
-            } catch (error) {
-              console.error(`Failed to delete ${blob.pathname}:`, error);
-            }
-          })
-        );
-
-        console.log(`[DELETE] Removed ${deletedCount} files from Vercel Blob for ${folderId}`);
-      }
-    } catch (error) {
-      console.error('[DELETE] Vercel Blob error:', error);
-    }
-
-    // Try to delete from AWS S3 if configured
-    try {
-      const AWS_LAMBDA_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
-      if (AWS_LAMBDA_URL) {
-        const response = await fetch(`${AWS_LAMBDA_URL}/results/delete/${folderId}`, {
-          method: 'DELETE',
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (response.ok) {
-          console.log(`[DELETE] Also removed from AWS S3: ${folderId}`);
-        }
-      }
-    } catch (error) {
-      console.error('[DELETE] AWS deletion failed:', error);
-      // Non-fatal - continue even if AWS deletion fails
-    }
-
-    if (deletedCount === 0) {
+    // Use AWS S3 for deletion
+    const s3Storage = createAWSS3Storage();
+    
+    if (!s3Storage) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Result folder not found or already deleted' 
+          error: 'AWS S3 storage not configured' 
         },
-        { status: 404 }
+        { status: 503 }
       );
     }
 
+    console.log(`[DELETE] Deleting ${folderId} from AWS S3...`);
+
+    // Delete from AWS S3
+    const result = await s3Storage.deleteFolder(folderId);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: result.error || 'Failed to delete from AWS S3' 
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[DELETE] Successfully deleted ${folderId} from AWS S3`);
+
     return NextResponse.json({
       success: true,
-      message: `Deleted ${folderId}`,
-      filesDeleted: deletedCount,
+      message: `Deleted ${folderId} from AWS S3`,
+      storage: 'aws_s3',
     });
 
   } catch (error) {
