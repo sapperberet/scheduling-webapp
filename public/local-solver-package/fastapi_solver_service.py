@@ -813,20 +813,26 @@ class AdvancedSchedulingSolver:
             logger.error(traceback.format_exc())
     
     def _update_progress(self, run_id: str, progress: float, message: str):
-        """Update progress and notify WebSocket clients"""
+        """Update progress and notify WebSocket clients (only if progress moves forward)"""
         if run_id in active_runs:
-            active_runs[run_id]['progress'] = progress
-            active_runs[run_id]['message'] = message
-            active_runs[run_id]['updated_at'] = datetime.now().isoformat()
-        
-        # Notify WebSocket clients
-        if run_id in websocket_connections:
-            try:
-                asyncio.create_task(self._send_progress_update(run_id, progress, message))
-            except Exception as e:
-                logger.warning(f"Failed to send WebSocket update: {e}")
-        
-        logger.info(f"Run {run_id}: {progress}% - {message}")
+            # Only update if progress is moving forward (never go backwards)
+            current_progress = active_runs[run_id].get('progress', 0)
+            if progress > current_progress:
+                active_runs[run_id]['progress'] = progress
+                active_runs[run_id]['message'] = message
+                active_runs[run_id]['updated_at'] = datetime.now().isoformat()
+                
+                # Notify WebSocket clients
+                if run_id in websocket_connections:
+                    try:
+                        asyncio.create_task(self._send_progress_update(run_id, progress, message))
+                    except Exception as e:
+                        logger.warning(f"Failed to send WebSocket update: {e}")
+                
+                logger.info(f"Run {run_id}: {progress}% - {message}")
+            else:
+                # Skip update - progress would go backwards
+                logger.debug(f"Run {run_id}: Skipping progress update {progress}% (current: {current_progress}%)")
     
     async def _send_progress_update(self, run_id: str, progress: float, message: str):
         """Send progress update via WebSocket"""
