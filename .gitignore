@@ -20,6 +20,8 @@
 # production
 /build
 
+lambda*
+
 # misc
 .DS_Store
 *.pem
@@ -46,3 +48,7 @@ amplify-env-variables.json
 *.tsbuildinfo
 next-env.d.ts
 LAMBDA_DEPLOYMENT_COMPLETE.md
+
+/lambda-package
+lambda-deployment.zip
+*.md

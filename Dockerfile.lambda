@@ -14,10 +14,10 @@ RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements-solver.txt
 COPY fastapi_solver_service.py ${LAMBDA_TASK_ROOT}/
 COPY local_solver.py ${LAMBDA_TASK_ROOT}/
 COPY local_solver_backup.py ${LAMBDA_TASK_ROOT}/
-COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
+COPY AWS_LAMBDA_UPDATED_CODE.py ${LAMBDA_TASK_ROOT}/aws_lambda.py
 
 # Create output directory
 RUN mkdir -p ${LAMBDA_TASK_ROOT}/solver_output
 
-# Set the Lambda handler
-CMD ["lambda_handler.handler"]
+# Set the Lambda handler - using Mangum directly from AWS_LAMBDA_UPDATED_CODE
+CMD ["aws_lambda.handler"]
