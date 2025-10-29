@@ -971,40 +971,62 @@ solver = AdvancedSchedulingSolver()
 
 # REST API Endpoints
 @app.post("/solve")
-async def solve_schedule(case: SchedulingCase):
-    """Submit a scheduling case for optimization (synchronous)."""
+async def solve_schedule(case: SchedulingCase, background_tasks: BackgroundTasks):
+    """Submit a scheduling case for optimization (async with progress tracking)."""
     try:
         run_id = str(uuid.uuid4())
         case_dict = case.dict()
 
+        # Initialize run status
         active_runs[run_id] = {
-            "status": "running",
+            "status": "processing",
             "progress": 0,
-            "message": "Optimization started",
+            "message": "Optimization queued and starting...",
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
 
-        # Run optimization synchronously for local usage
-        result = await solver.solve_async(case_dict, run_id)
-        active_runs[run_id].update({
-            "status": result.get("status", "success"),
-            "progress": 100 if result.get("status") == "success" else -1,
-            "message": "Completed" if result.get("status") == "success" else result.get("message", "Failed"),
-            "result": result,
-            "completed_at": datetime.now().isoformat()
-        })
+        # Start optimization in background
+        background_tasks.add_task(run_optimization, case_dict, run_id)
 
-        # Normalize to the shape expected by the web app/tests
+        # Return immediately with run_id for status polling
+        return {
+            "run_id": run_id,
+            "status": "processing",
+            "progress": 0,
+            "message": "Optimization started - use /status/{run_id} to track progress"
+        }
+
+    except Exception as e:
+        logger.error(f"API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def run_optimization(case_data: Dict[str, Any], run_id: str):
+    """Background task for running optimization with progress updates"""
+    try:
+        # Update status: Starting
+        active_runs[run_id]["status"] = "processing"
+        active_runs[run_id]["progress"] = 10
+        active_runs[run_id]["message"] = "Loading optimization data..."
+        active_runs[run_id]["updated_at"] = datetime.now().isoformat()
+        
+        # Run optimization
+        result = await solver.solve_async(case_data, run_id)
+        
+        # Normalize to the shape expected by the web app
         model_result = result.get("result", {})
         response_payload = solver._to_webapp_response(model_result, run_id)
 
-        # Package the output folder contents and add them to the response
+        # Package the output folder contents
         output_dir_str = result.get("output_directory")
         if output_dir_str:
             output_dir = Path(output_dir_str)
             if output_dir.exists() and output_dir.is_dir():
                 try:
+                    active_runs[run_id]["progress"] = 95
+                    active_runs[run_id]["message"] = "Packaging results..."
+                    active_runs[run_id]["updated_at"] = datetime.now().isoformat()
+                    
                     packaged_files = {}
                     for file_path in output_dir.rglob('*'):
                         if file_path.is_file():
@@ -1022,51 +1044,58 @@ async def solve_schedule(case: SchedulingCase):
 
                 except Exception as e:
                     logger.error(f"Failed to package output folder {output_dir}: {e}")
-
-        return response_payload
-
-    except Exception as e:
-        logger.error(f"API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def run_optimization(case_data: Dict[str, Any], run_id: str):
-    """Background task for running optimization"""
-    try:
-        active_runs[run_id]["status"] = "running"
-        result = await solver.solve_async(case_data, run_id)
         
-        # Update final status
+        # Update final status - COMPLETED
         active_runs[run_id].update({
-            "status": result["status"],
-            "progress": 100 if result["status"] == "success" else -1,
-            "message": "Completed" if result["status"] == "success" else result.get("message", "Failed"),
+            "status": "completed",
+            "progress": 100,
+            "message": "Optimization completed successfully",
+            "results": response_payload,  # Store full results for retrieval
             "result": result,
-            "completed_at": datetime.now().isoformat()
+            "completed_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
         })
+        
+        logger.info(f"[{run_id}] Optimization completed successfully")
         
     except Exception as e:
         logger.error(f"Background optimization failed: {e}")
+        logger.error(traceback.format_exc())
         active_runs[run_id].update({
-            "status": "error",
+            "status": "failed",
             "progress": -1,
             "message": str(e),
             "completed_at": datetime.now().isoformat()
         })
 
-@app.get("/status/{run_id}", response_model=SolverStatus)
+@app.get("/status/{run_id}")
 async def get_status(run_id: str):
-    """Get status of a specific optimization run"""
+    """Get status of a specific optimization run with full results when completed"""
     if run_id not in active_runs:
         raise HTTPException(status_code=404, detail="Run not found")
     
     run_data = active_runs[run_id]
-    return SolverStatus(
-        status=run_data["status"],
-        message=run_data["message"],
-        run_id=run_id,
-        progress=run_data.get("progress", 0),
-        results=run_data.get("result")
-    )
+    
+    response = {
+        "status": run_data["status"],
+        "message": run_data["message"],
+        "run_id": run_id,
+        "progress": run_data.get("progress", 0),
+        "created_at": run_data["created_at"],
+        "updated_at": run_data.get("updated_at", run_data["created_at"])
+    }
+    
+    # Include full results if completed
+    if run_data["status"] == "completed" and "results" in run_data:
+        response["results"] = run_data["results"]
+        response["output_directory"] = run_data.get("result", {}).get("output_directory")
+        response["packaged_files"] = run_data["results"].get("packaged_files")
+    
+    # Include error details if failed
+    if run_data["status"] == "failed" and "error" in run_data:
+        response["error"] = run_data["error"]
+    
+    return response
 
 @app.get("/runs")
 async def list_runs():

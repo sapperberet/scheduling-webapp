@@ -752,9 +752,63 @@ export default function RunTab() {
           });
           
           if (localResponse.ok) {
-            result = await localResponse.json();
-            addLog('[SUCCESS] Using LOCAL high-performance solver', 'success');
-            actualSolver = 'local';
+            const initialResult = await localResponse.json();
+            
+            // Check if local solver returns a run_id for async processing
+            if (initialResult.run_id && initialResult.status === 'processing') {
+              addLog('[INFO] Local solver started - tracking progress...', 'info');
+              
+              // Poll for status updates
+              let pollingAttempts = 0;
+              const maxPollingAttempts = 7200; // 4 hours at 2-second intervals
+              
+              while (pollingAttempts < maxPollingAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+                
+                try {
+                  const statusResponse = await fetch(`http://localhost:8000/status/${initialResult.run_id}`, {
+                    signal: AbortSignal.timeout(5000),
+                  });
+                  
+                  if (statusResponse.ok) {
+                    const statusData = await statusResponse.json();
+                    
+                    // Update progress if available
+                    if (statusData.progress !== undefined) {
+                      setProgress(Math.min(statusData.progress, 95));
+                      addLog(`[PROGRESS] ${Math.round(statusData.progress)}% complete`, 'info');
+                    }
+                    
+                    // Check if completed
+                    if (statusData.status === 'completed') {
+                      result = statusData;
+                      addLog('[SUCCESS] Using LOCAL high-performance solver', 'success');
+                      actualSolver = 'local';
+                      break;
+                    }
+                    
+                    // Check if failed
+                    if (statusData.status === 'failed' || statusData.status === 'error') {
+                      throw new Error(statusData.message || 'Local solver failed');
+                    }
+                  }
+                } catch (pollError) {
+                  console.warn('Status poll failed:', pollError);
+                  // Continue polling despite individual failures
+                }
+                
+                pollingAttempts++;
+              }
+              
+              if (!result) {
+                throw new Error('Local solver timed out');
+              }
+            } else {
+              // Synchronous response (old behavior)
+              result = initialResult;
+              addLog('[SUCCESS] Using LOCAL high-performance solver', 'success');
+              actualSolver = 'local';
+            }
           } else {
             throw new Error(`Local solver returned ${localResponse.status}`);
           }
