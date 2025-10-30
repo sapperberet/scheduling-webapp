@@ -127,7 +127,7 @@ export class AWSS3Storage {
    */
   async listResultFolders(): Promise<string[]> {
     try {
-      const response = await fetch(`${this.apiUrl}/storage/list-folders`, {
+      const response = await fetch(`${this.apiUrl}/results/folders`, {
         method: 'GET',
       });
 
@@ -137,7 +137,9 @@ export class AWSS3Storage {
       }
 
       const data = await response.json();
-      return data.folders || [];
+      // Lambda returns { folders: [...] }, extract just the names
+      const folders: Array<{ name?: string; [key: string]: unknown }> = data.folders || [];
+      return folders.map((f) => (typeof f === 'string' ? f : f.name || ''));
     } catch (error) {
       console.error('Error listing S3 folders:', error);
       return [];
