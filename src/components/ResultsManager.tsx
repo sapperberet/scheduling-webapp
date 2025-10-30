@@ -54,14 +54,34 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
     setError(null);
 
     try {
-      const response = await fetch('/api/results/list');
+      // Get AWS Solver URL from environment
+      const awsSolverUrl = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+      if (!awsSolverUrl) {
+        throw new Error('AWS Solver URL not configured');
+      }
+
+      // Call Lambda API directly (no auth required)
+      const response = await fetch(`${awsSolverUrl}/results/folders`);
       
       if (!response.ok) {
-        throw new Error('Failed to load results');
+        throw new Error(`Failed to load results: ${response.status}`);
       }
 
       const data = await response.json();
-      setFolders(data.folders || []);
+      
+      // Transform Lambda response to match expected format
+      const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number }) => ({
+        name: folder.name || '',
+        fileCount: 0, // Lambda doesn't provide file count in folders endpoint
+        size: 0, // Lambda doesn't provide size in folders endpoint
+        created: folder.created || new Date().toISOString(),
+        storage: 'aws_s3' as const,
+        solutions: folder.solutions_count || folder.solutions_count || 0,
+        solver_type: folder.solver_type || 'aws_lambda',
+        execution_time: 0,
+      }));
+      
+      setFolders(lambdaFolders);
     } catch (err) {
       console.error('Error loading results:', err);
       setError(err instanceof Error ? err.message : 'Failed to load results');

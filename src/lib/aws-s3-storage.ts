@@ -127,8 +127,12 @@ export class AWSS3Storage {
    */
   async listResultFolders(): Promise<string[]> {
     try {
+      // Call Lambda API directly (no auth required for public endpoint)
       const response = await fetch(`${this.apiUrl}/results/folders`, {
         method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!response.ok) {
