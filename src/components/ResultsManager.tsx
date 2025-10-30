@@ -69,21 +69,25 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
 
       const data = await response.json();
       
-      // For each folder, fetch detailed info including file count and size
+      // For each folder, fetch results.json to get file info
       const lambdaFolders = await Promise.all(
         (data.folders || []).map(async (folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number }) => {
-          let fileCount = 0;
+          const fileCount = 2; // results.json + metadata.json
           let size = 0;
           
           try {
-            const infoResponse = await fetch(`${awsSolverUrl}/folder/info/${folder.name}`);
+            // Try to fetch results.json to get size info
+            // S3 returns file metadata in headers
+            const s3Url = `https://s3.amazonaws.com/scheduling-solver-results/${folder.name}/results.json`;
+            const infoResponse = await fetch(s3Url, { method: 'HEAD' });
             if (infoResponse.ok) {
-              const infoData = await infoResponse.json();
-              fileCount = infoData.file_count || 0;
-              size = infoData.total_size || 0;
+              const contentLength = infoResponse.headers.get('content-length');
+              if (contentLength) {
+                size = parseInt(contentLength, 10);
+              }
             }
           } catch (err) {
-            console.warn(`Failed to fetch info for ${folder.name}:`, err);
+            console.warn(`Failed to fetch file info for ${folder.name}:`, err);
           }
           
           return {
