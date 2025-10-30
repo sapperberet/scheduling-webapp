@@ -93,7 +93,7 @@ def update_progress(run_id: str, progress: int, message: str):
 
 
 def get_next_result_number() -> int:
-    """Get next available Result_N number from S3"""
+    """Get next available result_N number from S3"""
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET,
@@ -103,7 +103,8 @@ def get_next_result_number() -> int:
         max_num = 0
         for prefix in response.get('CommonPrefixes', []):
             folder = prefix['Prefix'].rstrip('/')
-            match = re.match(r'Result_(\d+)', folder)
+            # Match both old format (Result_) and new format (result_)
+            match = re.match(r'(?:Result_|result_)(\d+)', folder)
             if match:
                 num = int(match.group(1))
                 if num > max_num:
@@ -115,33 +116,53 @@ def get_next_result_number() -> int:
         return 1
 
 
-def upload_results_to_s3(run_id: str, result_data: Dict[str, Any]) -> str:
+def upload_results_to_s3(run_id: str, result_data: Dict[str, Any], output_dir: str) -> str:
     """Upload results to S3 and return folder name"""
     try:
-        # Generate folder name
-        folder_name = f"Result_{get_next_result_number()}"
+        # Generate folder name using new lowercase format
+        result_num = get_next_result_number()
+        folder_name = f"result_{result_num}"
         
-        # Upload results.json
-        results_key = f"{folder_name}/results.json"
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=results_key,
-            Body=json.dumps(result_data, indent=2),
-            ContentType='application/json',
-            Metadata={
-                'run-id': run_id,
-                'created-at': datetime.utcnow().isoformat(),
-                'solver-type': 'aws_lambda'
-            }
-        )
+        # Upload all files from output directory
+        import os
+        import glob
         
-        # Upload metadata.json
+        if os.path.exists(output_dir):
+            # Upload all files from solver output directory
+            for file_path in glob.glob(os.path.join(output_dir, '*')):
+                if os.path.isfile(file_path):
+                    file_name = os.path.basename(file_path)
+                    s3_key = f"{folder_name}/{file_name}"
+                    
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # Determine content type
+                    if file_name.endswith('.json'):
+                        content_type = 'application/json'
+                    elif file_name.endswith('.xlsx'):
+                        content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    elif file_name.endswith('.log'):
+                        content_type = 'text/plain'
+                    else:
+                        content_type = 'application/octet-stream'
+                    
+                    s3_client.put_object(
+                        Bucket=S3_BUCKET,
+                        Key=s3_key,
+                        Body=file_content,
+                        ContentType=content_type
+                    )
+                    logger.info(f"[S3] Uploaded {file_name} to {s3_key}")
+        
+        # Upload metadata.json with summary
         metadata = {
             'run_id': run_id,
             'created_at': datetime.utcnow().isoformat(),
             'solver_type': 'aws_lambda',
             'solutions_count': len(result_data.get('solutions', [])),
-            'folder_name': folder_name
+            'folder_name': folder_name,
+            'result_number': result_num
         }
         
         metadata_key = f"{folder_name}/metadata.json"
@@ -200,6 +221,9 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
             # Run the REAL solver (Lambda-compatible version without tkinter)
             tables, meta = solver_core.Solve_test_case_lambda(tmp_path)
             
+            # Get the output directory where solver wrote files
+            output_dir = meta.get('output_dir', '/tmp')
+            
             update_progress(run_id, 70, "Processing solutions...")
             
             # Convert to expected format
@@ -241,8 +265,8 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
         
         update_progress(run_id, 90, "Uploading results to S3...")
         
-        # Upload to S3
-        folder_name = upload_results_to_s3(run_id, result)
+        # Upload to S3 - pass output directory
+        folder_name = upload_results_to_s3(run_id, result, output_dir)
         
         update_progress(run_id, 95, "Finalizing...")
         
