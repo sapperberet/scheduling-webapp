@@ -1994,6 +1994,8 @@ def Solve_test_case(case):
     logger.info("Wrote calendar: %s", cal_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
+    
+    return tables, meta
 
 
 # ---------- Defaults ----------
