@@ -372,6 +372,48 @@ async def list_result_folders():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/folder/info/{folder_name}")
+async def get_folder_info(folder_name: str):
+    """Get file information for a folder"""
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=f"{folder_name}/"
+        )
+        
+        if 'Contents' not in response:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        files = []
+        total_size = 0
+        
+        for obj in response['Contents']:
+            key = obj['Key']
+            filename = key.replace(f"{folder_name}/", "")
+            
+            if filename:  # Skip folder itself
+                size = obj['Size']
+                files.append({
+                    'name': filename,
+                    'size': size,
+                    'modified': obj['LastModified'].isoformat()
+                })
+                total_size += size
+        
+        return {
+            'folder': folder_name,
+            'files': files,
+            'file_count': len(files),
+            'total_size': total_size
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Error getting folder info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/download/folder/{folder_name}")
 async def download_folder(folder_name: str):
     """Download a Result_N folder as ZIP from S3"""

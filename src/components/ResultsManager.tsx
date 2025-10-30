@@ -24,7 +24,7 @@ interface ResultFolder {
   fileCount: number;
   size: number;
   created: string;
-  storage: 'vercel' | 'aws';
+  storage: 'aws_s3' | 'vercel';
   solutions?: number;
   solver_type?: string;
   execution_time?: number;
@@ -69,17 +69,35 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
 
       const data = await response.json();
       
-      // Transform Lambda response to match expected format
-      const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number }) => ({
-        name: folder.name || '',
-        fileCount: 0, // Lambda doesn't provide file count in folders endpoint
-        size: 0, // Lambda doesn't provide size in folders endpoint
-        created: folder.created || new Date().toISOString(),
-        storage: 'aws_s3' as const,
-        solutions: folder.solutions_count || folder.solutions_count || 0,
-        solver_type: folder.solver_type || 'aws_lambda',
-        execution_time: 0,
-      }));
+      // For each folder, fetch detailed info including file count and size
+      const lambdaFolders = await Promise.all(
+        (data.folders || []).map(async (folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number }) => {
+          let fileCount = 0;
+          let size = 0;
+          
+          try {
+            const infoResponse = await fetch(`${awsSolverUrl}/folder/info/${folder.name}`);
+            if (infoResponse.ok) {
+              const infoData = await infoResponse.json();
+              fileCount = infoData.file_count || 0;
+              size = infoData.total_size || 0;
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch info for ${folder.name}:`, err);
+          }
+          
+          return {
+            name: folder.name || '',
+            fileCount,
+            size,
+            created: folder.created || new Date().toISOString(),
+            storage: 'aws_s3' as const,
+            solutions: folder.solutions_count || 0,
+            solver_type: folder.solver_type || 'aws_lambda',
+            execution_time: 0,
+          };
+        })
+      );
       
       setFolders(lambdaFolders);
     } catch (err) {
@@ -95,10 +113,15 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
     setError(null);
 
     try {
-      const response = await fetch(`/api/results/download/${folderName}`);
+      const awsSolverUrl = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+      if (!awsSolverUrl) {
+        throw new Error('AWS Solver URL not configured');
+      }
+
+      const response = await fetch(`${awsSolverUrl}/download/folder/${folderName}`);
       
       if (!response.ok) {
-        throw new Error('Download failed');
+        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
 
       // Download as ZIP file
@@ -135,14 +158,23 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
     setError(null);
 
     try {
-      const response = await fetch(`/api/results/delete/${folderName}`, {
+      const awsSolverUrl = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+      if (!awsSolverUrl) {
+        throw new Error('AWS Solver URL not configured');
+      }
+
+      const response = await fetch(`${awsSolverUrl}/results/delete/${folderName}`, {
         method: 'DELETE',
       });
       
+      if (!response.ok) {
+        throw new Error(`Delete failed: ${response.status} ${response.statusText}`);
+      }
+
       const data = await response.json();
       
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Delete failed');
+      if (!data || data.status !== 'deleted') {
+        throw new Error('Delete response invalid');
       }
 
       // Remove from local state
@@ -249,11 +281,11 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
                           {folder.name}
                         </h3>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          folder.storage === 'aws' 
+                          folder.storage === 'aws_s3' 
                             ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
                             : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                         }`}>
-                          {folder.storage === 'aws' ? 'AWS Cloud' : 'Vercel Blob'}
+                          {folder.storage === 'aws_s3' ? 'AWS S3' : 'Vercel Blob'}
                         </span>
                       </div>
 
