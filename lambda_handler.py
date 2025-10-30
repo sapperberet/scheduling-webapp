@@ -334,7 +334,7 @@ async def get_status(run_id: str):
 
 @app.get("/results/folders")
 async def list_result_folders():
-    """List all Result_N folders in S3"""
+    """List all Result_N folders in S3 with file info"""
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET,
@@ -346,22 +346,43 @@ async def list_result_folders():
             folder_name = prefix['Prefix'].rstrip('/')
             
             try:
+                # Get metadata
                 metadata_key = f"{folder_name}/metadata.json"
                 obj = s3_client.get_object(Bucket=S3_BUCKET, Key=metadata_key)
                 metadata = json.loads(obj['Body'].read())
+                
+                # Get file count and size
+                files_response = s3_client.list_objects_v2(
+                    Bucket=S3_BUCKET,
+                    Prefix=f"{folder_name}/"
+                )
+                
+                file_count = 0
+                total_size = 0
+                for file_obj in files_response.get('Contents', []):
+                    key = file_obj['Key']
+                    # Don't count the folder itself
+                    if key != f"{folder_name}/":
+                        file_count += 1
+                        total_size += file_obj['Size']
                 
                 folders.append({
                     'name': folder_name,
                     'created': metadata.get('created_at'),
                     'solver_type': metadata.get('solver_type', 'aws_lambda'),
-                    'solutions_count': metadata.get('solutions_count', 0)
+                    'solutions_count': metadata.get('solutions_count', 0),
+                    'file_count': file_count,
+                    'total_size': total_size
                 })
-            except:
+            except Exception as e:
+                logger.warning(f"[WARN] Error getting info for {folder_name}: {e}")
                 folders.append({
                     'name': folder_name,
                     'created': datetime.utcnow().isoformat(),
                     'solver_type': 'aws_lambda',
-                    'solutions_count': 0
+                    'solutions_count': 0,
+                    'file_count': 0,
+                    'total_size': 0
                 })
         
         folders.sort(key=lambda x: x['name'], reverse=True)

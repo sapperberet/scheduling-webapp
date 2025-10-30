@@ -69,39 +69,19 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
 
       const data = await response.json();
       
-      // For each folder, fetch results.json to get file info
-      const lambdaFolders = await Promise.all(
-        (data.folders || []).map(async (folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number }) => {
-          const fileCount = 2; // results.json + metadata.json
-          let size = 0;
-          
-          try {
-            // Try to fetch results.json to get size info
-            // S3 returns file metadata in headers
-            const s3Url = `https://s3.amazonaws.com/scheduling-solver-results/${folder.name}/results.json`;
-            const infoResponse = await fetch(s3Url, { method: 'HEAD' });
-            if (infoResponse.ok) {
-              const contentLength = infoResponse.headers.get('content-length');
-              if (contentLength) {
-                size = parseInt(contentLength, 10);
-              }
-            }
-          } catch (err) {
-            console.warn(`Failed to fetch file info for ${folder.name}:`, err);
-          }
-          
-          return {
-            name: folder.name || '',
-            fileCount,
-            size,
-            created: folder.created || new Date().toISOString(),
-            storage: 'aws_s3' as const,
-            solutions: folder.solutions_count || 0,
-            solver_type: folder.solver_type || 'aws_lambda',
-            execution_time: 0,
-          };
-        })
-      );
+      // For each folder, use the metadata we have from Lambda
+      const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number; file_count?: number; total_size?: number }) => {
+        return {
+          name: folder.name || '',
+          fileCount: folder.file_count || 0,
+          size: folder.total_size || 0,
+          created: folder.created || new Date().toISOString(),
+          storage: 'aws_s3' as const,
+          solutions: folder.solutions_count || 0,
+          solver_type: folder.solver_type || 'aws_lambda',
+          execution_time: 0,
+        };
+      });
       
       setFolders(lambdaFolders);
     } catch (err) {
