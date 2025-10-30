@@ -204,11 +204,12 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
         # Solve
         tables, meta = solve_two_phase(consts, case, ctx, k=5, seed=None)
         
-        # Prepare output
-        out_dir = case.get('run', {}).get('out', 'out')
+        # IMPORTANT: In Lambda, must write to /tmp (read-only filesystem elsewhere)
+        out_dir = os.path.join('/tmp', f'solver_output_{int(datetime.utcnow().timestamp() * 1000)}')
         os.makedirs(out_dir, exist_ok=True)
+        logger.info(f"[SOLVER] Using output directory: {out_dir}")
         
-        # Write outputs
+        # Write outputs to /tmp
         write_excel_grid_multi(os.path.join(out_dir, 'schedules.xlsx'), tables)
         write_excel_hospital_multi(os.path.join(out_dir, 'hospital_schedule.xlsx'), tables)
         write_excel_calendar_multi(os.path.join(out_dir, 'calendar.xlsx'), tables)
@@ -217,7 +218,7 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
         meta['output_dir'] = out_dir
         meta['case_file'] = case_file_path
         
-        logger.info(f"[SOLVER] Optimization complete")
+        logger.info(f"[SOLVER] Optimization complete. Output in: {out_dir}")
         return tables, meta
         
     except Exception as e:
