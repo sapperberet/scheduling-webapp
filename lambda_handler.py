@@ -183,7 +183,7 @@ def upload_results_to_s3(run_id: str, result_data: Dict[str, Any], output_dir: s
 
 # ============================================================================
 # BACKGROUND OPTIMIZATION TASK
-# ============================================================================
+# =============================================================================
 
 async def run_optimization(case_data: Dict[str, Any], run_id: str):
     """Background task for running optimization with REAL solver"""
@@ -219,7 +219,13 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
             update_progress(run_id, 20, "Running optimization solver...")
             
             # Run the REAL solver (Lambda-compatible version without tkinter)
-            tables, meta = solver_core_real.Solve_test_case_lambda(tmp_path)
+            try:
+                tables, meta = solver_core_real.Solve_test_case_lambda(tmp_path)
+            except Exception as solver_error:
+                logger.error(f"[SOLVER ERROR] {type(solver_error).__name__}: {solver_error}")
+                import traceback as tb
+                logger.error(f"[FULL TRACEBACK]\n{tb.format_exc()}")
+                raise
             
             # Get the output directory where solver wrote files
             output_dir = meta.get('output_dir', '/tmp')
