@@ -1,7 +1,7 @@
 /**
  * AWS S3 Storage Module
  * Handles all S3 operations for storing solver results
- * Uses AWS SDK v3 for better tree-shaking and performance
+ * Uses AWS SDK v3  for better tree-shaking and performance
  */
 
 export interface S3Config {
