@@ -1,535 +1,478 @@
 """
-AWS Lambda Handler for Scheduling Solver with S3 Storage
-=========================================================
+AWS Lambda Solver Function - REAL SOLVER VERSION
+================================================
 
-This file should be deployed to AWS Lambda alongside your solver code.
-It handles both solver operations and S3 storage endpoints.
+This is the CORRECT AWS Lambda handler that integrates with the real testcase_gui solver.
+
+Key Features:
+- Real solver via testcase_gui.Solve_test_case()
+- Proper progress tracking (0% → 100%)
+- Correct Result_N numbering from S3
+- Full file output generation
+- Persistent timestamps
+- Async execution with background tasks
 
 Environment Variables Required:
-    S3_BUCKET: Name of the S3 bucket for storing results (e.g., 'scheduling-solver-results')
-    S3_REGION: AWS region (e.g., 'us-east-1')
+    S3_RESULTS_BUCKET: S3 bucket for results (e.g., 'scheduling-solver-results')
+    AWS_REGION: AWS region (e.g., 'us-east-1')
 """
 
 import json
-import boto3
-import base64
-import re
+import logging
 import os
+import uuid
+import re
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-import traceback
+from typing import Dict, Any, List, Optional
+import tempfile
+import boto3
 
-# Initialize AWS clients
-s3_client = boto3.client('s3')
-S3_BUCKET = os.environ.get('S3_BUCKET', 'scheduling-solver-results')
-S3_REGION = os.environ.get('S3_REGION', 'us-east-1')
+try:
+    from fastapi import FastAPI, HTTPException, BackgroundTasks
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+    from mangum import Mangum
+except ImportError:
+    print("Please install: pip install fastapi mangum boto3 ortools python-multipart")
+    raise
 
-# In-memory storage for run status (use DynamoDB for production)
-run_status = {}
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("aws-lambda-solver")
 
+app = FastAPI(title="AWS Lambda Scheduling Solver")
 
-def lambda_handler(event, context):
-    """
-    Main Lambda handler - routes requests to appropriate functions
-    """
-    try:
-        # Parse the event
-        path = event.get('path', event.get('rawPath', ''))
-        method = event.get('httpMethod', event.get('requestContext', {}).get('http', {}).get('method', 'GET'))
-        
-        print(f"[LAMBDA] Request: {method} {path}")
-        
-        # Route to appropriate handler
-        if path == '/solve' and method == 'POST':
-            return handle_solve(event)
-        elif path.startswith('/status/') and method == 'GET':
-            run_id = path.split('/')[-1]
-            return handle_status(run_id)
-        elif path == '/storage/upload-package' and method == 'POST':
-            return handle_upload_package(event)
-        elif path == '/storage/upload' and method == 'POST':
-            return handle_upload_file(event)
-        elif path == '/storage/list-folders' and method == 'GET':
-            return handle_list_folders()
-        elif path.startswith('/storage/list-files/') and method == 'GET':
-            folder_name = path.split('/')[-1]
-            return handle_list_files(folder_name)
-        elif path.startswith('/storage/download/') and method == 'GET':
-            # Extract the key from the path (everything after /storage/download/)
-            key = path.replace('/storage/download/', '')
-            return handle_download_file(key)
-        elif path.startswith('/storage/delete-folder/') and method == 'DELETE':
-            folder_name = path.split('/')[-1]
-            return handle_delete_folder(folder_name)
-        elif path == '/health' and method == 'GET':
-            return handle_health()
-        else:
-            return create_response(404, {'error': 'Endpoint not found', 'path': path, 'method': method})
-    
-    except Exception as e:
-        print(f"[ERROR] Lambda handler error: {str(e)}")
-        print(traceback.format_exc())
-        return create_response(500, {'error': str(e), 'traceback': traceback.format_exc()})
+# CORS for your Next.js app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# AWS S3 Configuration
+S3_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'scheduling-solver-results')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+
+# Initialize S3 client
+s3_client = boto3.client('s3', region_name=AWS_REGION)
+
+# Global state for active runs (in production, use DynamoDB or Redis)
+active_runs: Dict[str, Dict[str, Any]] = {}
+
+# Pydantic models
+class SchedulingCase(BaseModel):
+    constants: Dict[str, Any]
+    calendar: Dict[str, Any]
+    shifts: List[Dict[str, Any]]
+    providers: List[Dict[str, Any]]
+    run: Optional[Dict[str, Any]] = None
+
+class SolverStatus(BaseModel):
+    status: str
+    message: str
+    run_id: str
+    progress: int
+    results: Optional[Dict[str, Any]] = None
+    output_directory: Optional[str] = None
 
 # ============================================================================
-# SOLVER ENDPOINTS (Existing)
+# PROGRESS TRACKING & S3 HELPERS
 # ============================================================================
 
-def handle_solve(event):
-    """
-    Handle solver request - runs optimization and stores results in S3
-    """
-    try:
-        body = json.loads(event.get('body', '{}'))
-        run_id = body.get('run_id', f"run_{int(datetime.now().timestamp())}")
-        
-        print(f"[SOLVE] Starting optimization: {run_id}")
-        
-        # Update status
-        run_status[run_id] = {
-            'status': 'processing',
-            'progress': 0,
-            'message': 'Initializing solver...',
-            'started_at': datetime.now().isoformat()
-        }
-        
-        # TODO: Replace with your actual solver logic
-        # For now, using a simplified version
-        result = run_solver(body, run_id)
-        
-        # Store results in S3
-        folder_name = f"Result_{int(datetime.now().timestamp())}"
-        store_results_to_s3(result, folder_name, run_id)
-        
-        # Update status
-        run_status[run_id] = {
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Optimization completed',
-            'results': result,
-            'output_directory': folder_name,
-            'completed_at': datetime.now().isoformat()
-        }
-        
-        return create_response(200, {
-            'status': 'completed',
-            'run_id': run_id,
-            'progress': 100,
-            'message': 'Optimization completed',
-            'results': result,
-            'output_directory': folder_name
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] Solve error: {str(e)}")
-        return create_response(500, {'error': str(e)})
+def update_progress(run_id: str, progress: int, message: str):
+    """Update progress - only moves forward"""
+    if run_id in active_runs:
+        current = active_runs[run_id].get('progress', 0)
+        if progress > current:
+            active_runs[run_id]['progress'] = progress
+            active_runs[run_id]['message'] = message
+            active_runs[run_id]['updated_at'] = datetime.utcnow().isoformat()
+            logger.info(f"[PROGRESS] Run {run_id}: {progress}% - {message}")
 
 
-def handle_status(run_id: str):
-    """
-    Get status of a running optimization
-    """
-    if run_id not in run_status:
-        return create_response(404, {'error': 'Run not found'})
-    
-    return create_response(200, run_status[run_id])
-
-
-def handle_health():
-    """
-    Health check endpoint
-    """
-    return create_response(200, {
-        'status': 'ok',
-        'message': 'AWS Lambda solver is running',
-        'timestamp': datetime.now().isoformat(),
-        'solver_type': 'aws_lambda',
-        's3_bucket': S3_BUCKET,
-        'capabilities': ['optimization', 's3_storage', 'progress_tracking']
-    })
-
-
-# ============================================================================
-# S3 STORAGE ENDPOINTS (New)
-# ============================================================================
-
-def handle_upload_package(event):
-    """
-    Upload a package of files (Result_N folder) to S3
-    
-    Request body:
-    {
-        "folder_name": "Result_5",  // Optional
-        "files": {
-            "results.json": "base64_content",
-            "schedule.xlsx": "base64_content"
-        }
-    }
-    """
-    try:
-        body = json.loads(event.get('body', '{}'))
-        folder_name = body.get('folder_name')
-        files = body.get('files', {})
-        
-        if not files:
-            return create_response(400, {'error': 'No files provided'})
-        
-        # Auto-generate folder name if not provided
-        if not folder_name:
-            existing_folders = list_s3_folders()
-            nums = [int(f.split('_')[1]) for f in existing_folders if re.match(r'Result_\d+', f)]
-            next_num = max(nums + [0]) + 1
-            folder_name = f'Result_{next_num}'
-        
-        print(f"[S3] Uploading package to {folder_name}...")
-        
-        # Upload each file
-        uploaded_count = 0
-        for filename, base64_content in files.items():
-            try:
-                # Decode base64 content
-                content = base64.b64decode(base64_content)
-                key = f'{folder_name}/{filename}'
-                
-                # Determine content type
-                content_type = get_content_type(filename)
-                
-                # Upload to S3
-                s3_client.put_object(
-                    Bucket=S3_BUCKET,
-                    Key=key,
-                    Body=content,
-                    ContentType=content_type
-                )
-                
-                uploaded_count += 1
-                print(f"[S3] Uploaded {key}")
-            
-            except Exception as e:
-                print(f"[S3] Error uploading {filename}: {str(e)}")
-        
-        return create_response(200, {
-            'success': True,
-            'folder_name': folder_name,
-            'files_uploaded': uploaded_count
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] Upload package error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-def handle_upload_file(event):
-    """
-    Upload a single file to S3
-    
-    Request body:
-    {
-        "key": "Result_5/results.json",
-        "content": "base64_content",
-        "contentType": "application/json"
-    }
-    """
-    try:
-        body = json.loads(event.get('body', '{}'))
-        key = body.get('key')
-        base64_content = body.get('content')
-        content_type = body.get('contentType', 'application/octet-stream')
-        
-        if not key or not base64_content:
-            return create_response(400, {'error': 'Missing key or content'})
-        
-        # Decode and upload
-        content = base64.b64decode(base64_content)
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=key,
-            Body=content,
-            ContentType=content_type
-        )
-        
-        # Generate URL
-        url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
-        
-        return create_response(200, {
-            'success': True,
-            'url': url
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] Upload file error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-def handle_list_folders():
-    """
-    List all Result_N folders in S3
-    """
-    try:
-        folders = list_s3_folders()
-        
-        # Sort by number (most recent first)
-        sorted_folders = sorted(
-            folders,
-            key=lambda x: int(x.split('_')[1]) if re.match(r'Result_\d+', x) else 0,
-            reverse=True
-        )
-        
-        return create_response(200, {
-            'folders': sorted_folders,
-            'total': len(sorted_folders)
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] List folders error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-def handle_list_files(folder_name: str):
-    """
-    List all files in a specific Result_N folder
-    """
-    try:
-        prefix = f'{folder_name}/'
-        
-        response = s3_client.list_objects_v2(
-            Bucket=S3_BUCKET,
-            Prefix=prefix
-        )
-        
-        files = []
-        for obj in response.get('Contents', []):
-            key = obj['Key']
-            filename = key.replace(prefix, '')
-            
-            if filename:  # Skip the folder itself
-                # Generate presigned URL (valid for 1 hour)
-                url = s3_client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': S3_BUCKET, 'Key': key},
-                    ExpiresIn=3600
-                )
-                
-                files.append({
-                    'name': filename,
-                    'path': key,
-                    'size': obj['Size'],
-                    'lastModified': obj['LastModified'].isoformat(),
-                    'url': url
-                })
-        
-        return create_response(200, {
-            'files': files,
-            'total': len(files)
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] List files error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-def handle_download_file(key: str):
-    """
-    Download a file from S3
-    Returns the file content directly
-    """
-    try:
-        # URL decode the key
-        import urllib.parse
-        key = urllib.parse.unquote(key)
-        
-        print(f"[S3] Downloading {key}")
-        
-        response = s3_client.get_object(
-            Bucket=S3_BUCKET,
-            Key=key
-        )
-        
-        content = response['Body'].read()
-        content_type = response.get('ContentType', 'application/octet-stream')
-        
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': content_type,
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': base64.b64encode(content).decode('utf-8'),
-            'isBase64Encoded': True
-        }
-    
-    except s3_client.exceptions.NoSuchKey:
-        return create_response(404, {'error': 'File not found'})
-    except Exception as e:
-        print(f"[ERROR] Download error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-def handle_delete_folder(folder_name: str):
-    """
-    Delete all files in a Result_N folder from S3
-    """
-    try:
-        prefix = f'{folder_name}/'
-        
-        # List all objects
-        response = s3_client.list_objects_v2(
-            Bucket=S3_BUCKET,
-            Prefix=prefix
-        )
-        
-        objects = response.get('Contents', [])
-        
-        if not objects:
-            return create_response(404, {'error': 'Folder not found or already empty'})
-        
-        # Delete all objects
-        delete_keys = [{'Key': obj['Key']} for obj in objects]
-        
-        s3_client.delete_objects(
-            Bucket=S3_BUCKET,
-            Delete={'Objects': delete_keys}
-        )
-        
-        print(f"[S3] Deleted {len(delete_keys)} files from {folder_name}")
-        
-        return create_response(200, {
-            'success': True,
-            'deleted_count': len(delete_keys)
-        })
-    
-    except Exception as e:
-        print(f"[ERROR] Delete folder error: {str(e)}")
-        return create_response(500, {'error': str(e)})
-
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def list_s3_folders() -> List[str]:
-    """
-    List all Result_N folders in S3 bucket
-    """
+def get_next_result_number() -> int:
+    """Get next available Result_N number from S3"""
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET,
-            Prefix='Result_',
             Delimiter='/'
         )
         
-        folders = set()
-        
-        # Get folders from common prefixes
+        max_num = 0
         for prefix in response.get('CommonPrefixes', []):
             folder = prefix['Prefix'].rstrip('/')
-            if re.match(r'Result_\d+', folder):
-                folders.add(folder)
-        
-        # Also check object keys
-        for obj in response.get('Contents', []):
-            match = re.search(r'(Result_\d+)/', obj['Key'])
+            match = re.match(r'Result_(\d+)', folder)
             if match:
-                folders.add(match.group(1))
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
         
-        return list(folders)
-    
+        return max_num + 1
     except Exception as e:
-        print(f"[ERROR] List folders error: {str(e)}")
-        return []
+        logger.error(f"[ERROR] Error getting next result number: {e}")
+        return 1
 
 
-def store_results_to_s3(result: Dict, folder_name: str, run_id: str):
-    """
-    Store solver results to S3
-    """
+def upload_results_to_s3(run_id: str, result_data: Dict[str, Any]) -> str:
+    """Upload results to S3 and return folder name"""
     try:
-        # Store results.json
-        results_json = json.dumps(result, indent=2)
+        # Generate folder name
+        folder_name = f"Result_{get_next_result_number()}"
+        
+        # Upload results.json
+        results_key = f"{folder_name}/results.json"
         s3_client.put_object(
             Bucket=S3_BUCKET,
-            Key=f'{folder_name}/results.json',
-            Body=results_json,
+            Key=results_key,
+            Body=json.dumps(result_data, indent=2),
+            ContentType='application/json',
+            Metadata={
+                'run-id': run_id,
+                'created-at': datetime.utcnow().isoformat(),
+                'solver-type': 'aws_lambda'
+            }
+        )
+        
+        # Upload metadata.json
+        metadata = {
+            'run_id': run_id,
+            'created_at': datetime.utcnow().isoformat(),
+            'solver_type': 'aws_lambda',
+            'solutions_count': len(result_data.get('solutions', [])),
+            'folder_name': folder_name
+        }
+        
+        metadata_key = f"{folder_name}/metadata.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(metadata, indent=2),
             ContentType='application/json'
         )
         
-        print(f"[S3] Stored results to {folder_name}/results.json")
-    
+        logger.info(f"[S3] Uploaded results to S3: {folder_name}")
+        return folder_name
+        
     except Exception as e:
-        print(f"[ERROR] Failed to store results to S3: {str(e)}")
+        logger.error(f"[ERROR] Failed to upload to S3: {e}")
+        raise
 
 
-def run_solver(case_data: Dict, run_id: str) -> Dict:
-    """
-    Run the actual solver (placeholder - replace with your solver logic)
-    """
-    # This is a placeholder. Replace with your actual solver from solver_service.py
-    # or import your solver module
-    
-    shifts = case_data.get('shifts', [])
-    providers = case_data.get('providers', [])
-    
-    # Update progress
-    run_status[run_id]['progress'] = 25
-    run_status[run_id]['message'] = 'Building constraint model...'
-    
-    # Simple mock assignments
-    assignments = []
-    for i, shift in enumerate(shifts):
-        if i < len(providers):
-            provider = providers[i % len(providers)]
-            assignments.append({
-                'shift_id': shift.get('id'),
-                'provider_name': provider.get('name'),
-                'date': shift.get('date'),
-                'shift_type': shift.get('type')
+# ============================================================================
+# BACKGROUND OPTIMIZATION TASK
+# ============================================================================
+
+async def run_optimization(case_data: Dict[str, Any], run_id: str):
+    """Background task for running optimization with REAL solver"""
+    try:
+        active_runs[run_id]["status"] = "running"
+        update_progress(run_id, 2, "Validating input...")
+        
+        # Import the actual solver logic
+        try:
+            import testcase_gui
+        except ImportError:
+            logger.error("[ERROR] testcase_gui not found - solver not available")
+            active_runs[run_id].update({
+                "status": "failed",
+                "progress": -1,
+                "message": "Solver not available",
+                "error": "testcase_gui module not found",
+                "completed_at": datetime.utcnow().isoformat()
             })
-    
-    run_status[run_id]['progress'] = 75
-    run_status[run_id]['message'] = 'Finalizing solution...'
-    
-    return {
-        'solutions': [{
-            'assignments': assignments,
-            'objective_value': 1000
-        }],
-        'solver_stats': {
-            'solver_type': 'ortools_fastapi',
-            'status': 'OPTIMAL',
-            'execution_time_ms': 2251
+            return
+        
+        update_progress(run_id, 10, "Preparing optimization model...")
+        
+        # Save case to temp file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+            json.dump(case_data, tmp)
+            tmp_path = tmp.name
+        
+        try:
+            update_progress(run_id, 20, "Running optimization solver...")
+            
+            # Run the REAL solver
+            tables, meta = testcase_gui.Solve_test_case(tmp_path)
+            
+            update_progress(run_id, 70, "Processing solutions...")
+            
+            # Convert to expected format
+            solutions = []
+            for i, table_data in enumerate(tables):
+                assignments = []
+                for (s_idx, p_idx) in table_data.get('assignment', []):
+                    shift = table_data['shifts'][s_idx]
+                    provider = table_data['providers'][p_idx]
+                    assignments.append({
+                        "shift_id": shift['id'],
+                        "provider_name": provider['name'],
+                        "date": shift['date'],
+                        "shift_type": shift.get('type', ''),
+                        "start_time": shift.get('start', ''),
+                        "end_time": shift.get('end', '')
+                    })
+                
+                objective = (meta.get('per_table', [])[i].get('objective') 
+                           if i < len(meta.get('per_table', [])) else 0)
+                
+                solutions.append({
+                    "assignments": assignments,
+                    "objective_value": objective
+                })
+            
+            result = {
+                'status': 'completed',
+                'solutions': solutions,
+                'solver_stats': meta.get('phase2', {})
+            }
+            
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+        
+        update_progress(run_id, 90, "Uploading results to S3...")
+        
+        # Upload to S3
+        folder_name = upload_results_to_s3(run_id, result)
+        
+        update_progress(run_id, 95, "Finalizing...")
+        
+        # Update active_runs with completion
+        active_runs[run_id].update({
+            "status": "completed",
+            "progress": 100,
+            "message": "Optimization completed successfully",
+            "result": result,
+            "output_directory": folder_name,
+            "completed_at": datetime.utcnow().isoformat()
+        })
+        
+        logger.info(f"[SUCCESS] Run {run_id} completed successfully: {folder_name}")
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Optimization failed for run {run_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        active_runs[run_id].update({
+            "status": "failed",
+            "progress": -1,
+            "message": str(e),
+            "error": str(e),
+            "completed_at": datetime.utcnow().isoformat()
+        })
+
+
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
+
+@app.post("/solve")
+async def solve(case: SchedulingCase, background_tasks: BackgroundTasks):
+    """Start optimization (async - returns immediately)"""
+    try:
+        run_id = str(uuid.uuid4())
+        
+        # Initialize run state
+        active_runs[run_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "Optimization started",
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
         }
+        
+        # Start background task
+        background_tasks.add_task(run_optimization, case.dict(), run_id)
+        
+        logger.info(f"[SOLVE] Started optimization run: {run_id}")
+        
+        return {
+            "run_id": run_id,
+            "status": "processing",
+            "progress": 0,
+            "message": "Optimization started"
+        }
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to start optimization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/status/{run_id}")
+async def get_status(run_id: str):
+    """Get optimization status and progress"""
+    if run_id not in active_runs:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    run_data = active_runs[run_id]
+    
+    response = {
+        "status": run_data["status"],
+        "message": run_data["message"],
+        "run_id": run_id,
+        "progress": run_data.get("progress", 0)
     }
+    
+    if run_data["status"] == "completed":
+        response["results"] = run_data.get("result")
+        response["output_directory"] = run_data.get("output_directory")
+    
+    if run_data["status"] == "failed":
+        response["error"] = run_data.get("error", "Unknown error")
+    
+    return response
 
 
-def get_content_type(filename: str) -> str:
-    """
-    Determine content type from filename
-    """
-    ext = filename.lower().split('.')[-1]
-    content_types = {
-        'json': 'application/json',
-        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'xls': 'application/vnd.ms-excel',
-        'txt': 'text/plain',
-        'log': 'text/plain',
-        'csv': 'text/csv',
-        'pdf': 'application/pdf'
-    }
-    return content_types.get(ext, 'application/octet-stream')
+@app.get("/results/folders")
+async def list_result_folders():
+    """List all Result_N folders in S3"""
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Delimiter='/'
+        )
+        
+        folders = []
+        for prefix in response.get('CommonPrefixes', []):
+            folder_name = prefix['Prefix'].rstrip('/')
+            
+            try:
+                metadata_key = f"{folder_name}/metadata.json"
+                obj = s3_client.get_object(Bucket=S3_BUCKET, Key=metadata_key)
+                metadata = json.loads(obj['Body'].read())
+                
+                folders.append({
+                    'name': folder_name,
+                    'created': metadata.get('created_at'),
+                    'solver_type': metadata.get('solver_type', 'aws_lambda'),
+                    'solutions_count': metadata.get('solutions_count', 0)
+                })
+            except:
+                folders.append({
+                    'name': folder_name,
+                    'created': datetime.utcnow().isoformat(),
+                    'solver_type': 'aws_lambda',
+                    'solutions_count': 0
+                })
+        
+        folders.sort(key=lambda x: x['name'], reverse=True)
+        return {"folders": folders}
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Error listing folders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-def create_response(status_code: int, body: Dict) -> Dict:
-    """
-    Create Lambda response with CORS headers
-    """
+@app.get("/download/folder/{folder_name}")
+async def download_folder(folder_name: str):
+    """Download a Result_N folder as ZIP from S3"""
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=f"{folder_name}/"
+        )
+        
+        if 'Contents' not in response:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        import zipfile
+        import io
+        
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for obj in response['Contents']:
+                key = obj['Key']
+                filename = key.replace(f"{folder_name}/", "")
+                
+                if filename:
+                    file_obj = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+                    file_content = file_obj['Body'].read()
+                    zip_file.writestr(filename, file_content)
+        
+        from fastapi.responses import Response
+        
+        zip_buffer.seek(0)
+        return Response(
+            content=zip_buffer.read(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={folder_name}.zip"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Error downloading folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/results/delete/{folder_name}")
+async def delete_folder(folder_name: str):
+    """Delete a Result_N folder from S3"""
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=f"{folder_name}/"
+        )
+        
+        if 'Contents' not in response:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        for obj in response['Contents']:
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=obj['Key'])
+        
+        logger.info(f"[S3] Deleted folder: {folder_name}")
+        return {"status": "deleted", "folder": folder_name}
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Error deleting folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint"""
     return {
-        'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        },
-        'body': json.dumps(body)
+        "status": "ok",
+        "message": "AWS Lambda Solver is running",
+        "timestamp": datetime.utcnow().isoformat(),
+        "active_runs": len(active_runs),
+        "s3_bucket": S3_BUCKET,
+        "region": AWS_REGION,
+        "solver": "real_ortools"
     }
+
+
+@app.get("/")
+async def root():
+    """API information"""
+    return {
+        "title": "AWS Lambda Scheduling Solver",
+        "version": "2.0.0",
+        "endpoints": {
+            "POST /solve": "Start optimization (async)",
+            "GET /status/{run_id}": "Get optimization progress",
+            "GET /results/folders": "List all result folders",
+            "GET /download/folder/{folder_name}": "Download results as ZIP",
+            "DELETE /results/delete/{folder_name}": "Delete result folder",
+            "GET /health": "Health check"
+        },
+        "storage": "AWS S3",
+        "execution": "Async with progress tracking",
+        "solver": "Real OR-Tools (via testcase_gui)"
+    }
+
+
+# AWS Lambda handler (using Mangum)
+handler = Mangum(app)
+
+# For local testing
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
