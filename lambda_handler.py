@@ -193,10 +193,10 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
         
         # Import the Lambda-compatible solver (no tkinter dependencies)
         try:
-            import solver_core
+            import solver_core_real
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"[ERROR] Failed to import solver_core - {error_msg}")
+            logger.error(f"[ERROR] Failed to import solver_core_real - {error_msg}")
             import traceback
             logger.error(f"[TRACEBACK] {traceback.format_exc()}")
             active_runs[run_id].update({
@@ -219,7 +219,7 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
             update_progress(run_id, 20, "Running optimization solver...")
             
             # Run the REAL solver (Lambda-compatible version without tkinter)
-            tables, meta = solver_core.Solve_test_case_lambda(tmp_path)
+            tables, meta = solver_core_real.Solve_test_case_lambda(tmp_path)
             
             # Get the output directory where solver wrote files
             output_dir = meta.get('output_dir', '/tmp')
