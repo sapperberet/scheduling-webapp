@@ -170,16 +170,19 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
         active_runs[run_id]["status"] = "running"
         update_progress(run_id, 2, "Validating input...")
         
-        # Import the actual solver logic
+        # Import the Lambda-compatible solver (no tkinter dependencies)
         try:
-            import testcase_gui
-        except ImportError:
-            logger.error("[ERROR] testcase_gui not found - solver not available")
+            import solver_core
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"[ERROR] Failed to import solver_core - {error_msg}")
+            import traceback
+            logger.error(f"[TRACEBACK] {traceback.format_exc()}")
             active_runs[run_id].update({
                 "status": "failed",
                 "progress": -1,
                 "message": "Solver not available",
-                "error": "testcase_gui module not found",
+                "error": error_msg,
                 "completed_at": datetime.utcnow().isoformat()
             })
             return
@@ -194,8 +197,8 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
         try:
             update_progress(run_id, 20, "Running optimization solver...")
             
-            # Run the REAL solver
-            tables, meta = testcase_gui.Solve_test_case(tmp_path)
+            # Run the REAL solver (Lambda-compatible version without tkinter)
+            tables, meta = solver_core.Solve_test_case_lambda(tmp_path)
             
             update_progress(run_id, 70, "Processing solutions...")
             
