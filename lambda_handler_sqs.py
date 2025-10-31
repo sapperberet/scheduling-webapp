@@ -347,51 +347,9 @@ async def health():
 # Lambda Handler
 # ============================================================================
 
-# Create the Mangum adapter for HTTP requests
-asgi_handler = Mangum(
+# Create the Mangum adapter for HTTP requests with explicit API Gateway v2 format support
+handler = Mangum(
     app,
     lifespan="off",  # Disable ASGI lifespan for Lambda
 )
-
-def handler(event, context):
-    """
-    Main Lambda handler that routes between SQS and HTTP events.
-    
-    - SQS events: Records field present, handle directly
-    - HTTP events: API Gateway format, route through Mangum
-    """
-    # Log the entire event for debugging
-    logger.info(f"[HANDLER] Event type: {type(event)}")
-    if isinstance(event, dict):
-        logger.info(f"[HANDLER] Event keys: {list(event.keys())}")
-    else:
-        logger.info(f"[HANDLER] Event: {event}")
-    
-    # Check if this is an SQS event
-    if isinstance(event, dict) and "Records" in event:
-        logger.info(f"[HANDLER] Processing SQS event with {len(event['Records'])} record(s)")
-        try:
-            # Handle SQS records
-            for record in event["Records"]:
-                if record.get("eventSource") == "aws:sqs":
-                    body = json.loads(record.get("body", "{}"))
-                    logger.info(f"[HANDLER] SQS Message: run_id={body.get('run_id')}")
-            return {
-                "statusCode": 200,
-                "body": json.dumps({"message": "SQS messages accepted"})
-            }
-        except Exception as e:
-            logger.error(f"[HANDLER] SQS processing error: {e}", exc_info=True)
-            return {
-                "statusCode": 500,
-                "body": json.dumps({"error": str(e)})
-            }
-    
-    # For HTTP events, route to Mangum
-    logger.info(f"[HANDLER] Routing to ASGI handler (Mangum)")
-    try:
-        return asgi_handler(event, context)
-    except Exception as e:
-        logger.error(f"[HANDLER] ASGI handler error: {e}", exc_info=True)
-        raise
 
