@@ -20,7 +20,8 @@
 # production
 /build
 
-lambda*
+# lambda deployment artifacts (but keep handler files)
+lambda-deployment.zip
 
 # misc
 .DS_Store
