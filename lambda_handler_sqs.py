@@ -347,10 +347,50 @@ async def health():
 # Lambda Handler
 # ============================================================================
 
-# Configure Mangum with explicit settings to handle Lambda invocations properly
-# lifespan='off' prevents issues when invoked directly (not via API Gateway)
-# enable_lifespan=False for older Mangum versions compatibility
-handler = Mangum(
+# Create the Mangum adapter for HTTP requests
+asgi_handler = Mangum(
     app,
     lifespan="off",  # Disable ASGI lifespan for Lambda
 )
+
+def handler(event, context):
+    """
+    Main Lambda handler that routes between SQS and HTTP events.
+    
+    - SQS events: Records field present, handle directly
+    - HTTP events: API Gateway format, route through Mangum
+    """
+    logger.info(f"[HANDLER] Received event type: {type(event)}")
+    logger.info(f"[HANDLER] Event keys: {event.keys() if isinstance(event, dict) else 'N/A'}")
+    
+    # Check if this is an SQS event
+    if "Records" in event:
+        logger.info(f"[HANDLER] Processing SQS event with {len(event['Records'])} record(s)")
+        try:
+            # Handle SQS records
+            for record in event["Records"]:
+                if record["eventSource"] == "aws:sqs":
+                    body = json.loads(record["body"])
+                    logger.info(f"[HANDLER] SQS Message: run_id={body.get('run_id')}")
+                    # Process SQS message here if needed
+                    # For now, just log it as the actual processing happens in background
+            return {
+                "statusCode": 200,
+                "body": json.dumps({"message": "SQS messages accepted"})
+            }
+        except Exception as e:
+            logger.error(f"[HANDLER] SQS processing error: {e}")
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": str(e)})
+            }
+    
+    # Check if this is an HTTP event (API Gateway format)
+    if "requestContext" in event or "httpMethod" in event or "rawPath" in event:
+        logger.info(f"[HANDLER] Processing HTTP event: {event.get('httpMethod', 'UNKNOWN')} {event.get('path', event.get('rawPath', '/'))}")
+        return asgi_handler(event, context)
+    
+    # Unknown event format
+    logger.warning(f"[HANDLER] Unknown event format, attempting HTTP handler")
+    return asgi_handler(event, context)
+
