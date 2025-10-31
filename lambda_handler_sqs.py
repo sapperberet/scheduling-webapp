@@ -371,6 +371,9 @@ def handler(event, context):
                 if isinstance(result, dict):
                     print(f"[HANDLER] Response keys: {list(result.keys())}")
                     print(f"[HANDLER] Response statusCode: {result.get('statusCode')}")
+                    print(f"[HANDLER] Response body type: {type(result.get('body'))}")
+                    body_str = str(result.get('body', ''))[:200]
+                    print(f"[HANDLER] Response body (first 200 chars): {body_str}")
                 return result
             
             # Handle SQS events
