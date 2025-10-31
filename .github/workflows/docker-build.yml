@@ -1,0 +1,134 @@
+name: Build and Deploy Lambda Docker Image
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'Webapp7aramoy/scheduling-webapp/Dockerfile.worker'
+      - 'Webapp7aramoy/scheduling-webapp/lambda_handler_sqs.py'
+      - 'Webapp7aramoy/scheduling-webapp/lambda_handler.py'
+      - 'Webapp7aramoy/scheduling-webapp/requirements-solver.txt'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build Docker image
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: scheduling-solver-worker
+        IMAGE_TAG: ${{ github.sha }}
+        BRANCH_TAG: ${{ github.ref_name }}
+        # Disable provenance attestation (Lambda doesn't support in-toto layers)
+        DOCKER_BUILDKIT: 1
+      run: |
+        cd Webapp7aramoy/scheduling-webapp
+        
+        # Build with proper single-platform manifest (Linux)
+        # Use --provenance=false to avoid adding unsupported in-toto layers
+        docker build \
+          --build-arg BUILDKIT_CONTEXT_KEEP_GIT_DIR=1 \
+          --provenance=false \
+          -f Dockerfile.worker \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+          .
+        
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+    
+    - name: Push to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: scheduling-solver-worker
+        IMAGE_TAG: ${{ github.sha }}
+        BRANCH_TAG: ${{ github.ref_name }}
+      run: |
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        # Get image digest for Lambda update
+        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
+        echo "Pushed image: $DIGEST"
+        echo "image_uri=$DIGEST" >> $GITHUB_ENV
+    
+    - name: Verify ECR image manifest type
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: scheduling-solver-worker
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Wait for image to be available
+        sleep 5
+        
+        MANIFEST_TYPE=$(aws ecr describe-images \
+          --repository-name $ECR_REPOSITORY \
+          --image-ids imageTag=$IMAGE_TAG \
+          --query 'imageDetails[0].imageManifestMediaType' \
+          --output text)
+        
+        echo "Image manifest type: $MANIFEST_TYPE"
+        
+        if [[ "$MANIFEST_TYPE" == "application/vnd.oci.image.manifest.v1+json" ]]; then
+          echo "✅ Manifest type is correct (single image manifest)"
+        else
+          echo "❌ ERROR: Manifest type is $MANIFEST_TYPE (expected application/vnd.oci.image.manifest.v1+json)"
+          exit 1
+        fi
+    
+    - name: Update Lambda function
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: scheduling-solver-worker
+        IMAGE_TAG: ${{ github.sha }}
+        LAMBDA_FUNCTION: scheduling-solver-worker
+      run: |
+        IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        
+        echo "Updating Lambda with: $IMAGE_URI"
+        
+        aws lambda update-function-code \
+          --function-name $LAMBDA_FUNCTION \
+          --image-uri $IMAGE_URI
+        
+        # Wait for update to complete
+        echo "Waiting for Lambda update to complete..."
+        aws lambda wait function-updated \
+          --function-name $LAMBDA_FUNCTION
+        
+        echo "✅ Lambda function updated successfully"
+    
+    - name: Verify Lambda deployment
+      env:
+        LAMBDA_FUNCTION: scheduling-solver-worker
+      run: |
+        # Get updated function info
+        aws lambda get-function \
+          --function-name $LAMBDA_FUNCTION \
+          --query 'Configuration.[FunctionName,State,LastUpdateStatus]' \
+          --output table
+
