@@ -347,9 +347,41 @@ async def health():
 # Lambda Handler
 # ============================================================================
 
-# Create the Mangum adapter for HTTP requests with explicit API Gateway v2 format support
-handler = Mangum(
+# Create the Mangum adapter for HTTP requests
+mangum_handler = Mangum(
     app,
     lifespan="off",  # Disable ASGI lifespan for Lambda
 )
+
+def handler(event, context):
+    """
+    AWS Lambda handler supporting both HTTP (API Gateway v2) and SQS events.
+    """
+    try:
+        # Log event for debugging
+        logger.info(f"[HANDLER] Event keys: {list(event.keys()) if isinstance(event, dict) else type(event)}")
+        
+        # Handle API Gateway v2 HTTP events
+        if isinstance(event, dict):
+            # Check for HTTP event indicators
+            if 'requestContext' in event or 'rawPath' in event:
+                logger.info(f"[HANDLER] Detected HTTP event: {event.get('requestContext', {}).get('http', {}).get('method', 'UNKNOWN')} {event.get('rawPath', '/')}")
+                return mangum_handler(event, context)
+            
+            # Handle SQS events
+            elif 'Records' in event:
+                logger.info(f"[HANDLER] Detected SQS event with {len(event['Records'])} record(s)")
+                # For now, just return success as SQS processing is handled in background
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({"message": "SQS messages accepted"})
+                }
+        
+        # Default: try Mangum
+        logger.warning(f"[HANDLER] Unknown event format, attempting Mangum")
+        return mangum_handler(event, context)
+        
+    except Exception as e:
+        logger.error(f"[HANDLER] Error: {e}", exc_info=True)
+        raise
 
