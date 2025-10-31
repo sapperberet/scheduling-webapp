@@ -1007,12 +1007,48 @@ export default function RunTab() {
               if (!result) {
                 throw new Error('AWS optimization timed out');
               }
+            } else if (awsResult.status === 'queued' || awsResult.status === 'processing') {
+              // Async response - job queued, poll for status
+              addLog(`[INFO] Job queued: ${awsResult.run_id}. Polling for status...`, 'info');
+              
+              // Poll status endpoint
+              const statusPollInterval = setInterval(async () => {
+                try {
+                  const statusResp = await fetch(`${process.env.REACT_APP_AWS_SOLVER_URL || 'https://iiittt6g5f.execute-api.us-east-1.amazonaws.com'}/status/${awsResult.run_id}`);
+                  if (statusResp.ok) {
+                    const statusData = await statusResp.json();
+                    if (statusData.progress !== undefined) {
+                      setProgress(statusData.progress);
+                    }
+                    if (statusData.status === 'completed') {
+                      clearInterval(statusPollInterval);
+                      result = statusData;
+                      setProgress(100);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Status poll error:', e);
+                }
+              }, 2000); // Poll every 2 seconds
+              
+              // Wait for completion (max 10 minutes)
+              const maxWaitTime2 = 10 * 60 * 1000;
+              const startWait2 = Date.now();
+              while (!result && (Date.now() - startWait2 < maxWaitTime2)) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+              
+              if (statusPollInterval) clearInterval(statusPollInterval);
+              
+              if (!result) {
+                throw new Error('AWS optimization timed out');
+              }
             } else if (awsResult.status === 'completed' || awsResult.results) {
               // Synchronous response - AWS completed immediately
               result = awsResult;
               setProgress(100);
             } else {
-              throw new Error('AWS returned unexpected response format');
+              throw new Error(`AWS returned unexpected response format: ${JSON.stringify(awsResult).substring(0, 200)}`);
             }
             
             addLog('[SUCCESS] Using AWS CLOUD solver', 'success');
