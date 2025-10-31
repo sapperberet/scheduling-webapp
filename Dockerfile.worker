@@ -1,4 +1,5 @@
 FROM public.ecr.aws/lambda/python:3.11
+# Cache invalidation: 2025-10-31-github-actions-fix
 RUN yum install -y gcc gcc-c++ make && yum clean all
 WORKDIR /build
 COPY requirements-solver.txt .
