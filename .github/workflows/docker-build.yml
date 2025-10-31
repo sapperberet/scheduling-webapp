@@ -54,9 +54,11 @@ jobs:
         ECR_REPOSITORY: scheduling-solver-worker
         IMAGE_TAG: ${{ github.sha }}
         BRANCH_TAG: ${{ github.ref_name }}
+        DOCKER_BUILDKIT: 0
       run: |
-        # Build with standard docker build (no buildx, no provenance)
-        docker build -f Dockerfile.worker \
+        # Build with standard docker build (no buildkit, no cache issues)
+        docker build --no-cache \
+          -f Dockerfile.worker \
           -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
           -t $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG \
           -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
