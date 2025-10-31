@@ -566,8 +566,11 @@ async def root():
 
 
 # AWS Lambda handler (using Mangum)
-handler = Mangum(app)
-
+# Configure with lifespan='off' to handle direct Lambda invocations
+handler = Mangum(
+    app,
+    lifespan="off",  # Disable ASGI lifespan for Lambda
+)
 # For local testing
 if __name__ == "__main__":
     import uvicorn

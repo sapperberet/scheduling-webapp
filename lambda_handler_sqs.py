@@ -347,4 +347,10 @@ async def health():
 # Lambda Handler
 # ============================================================================
 
-handler = Mangum(app)
+# Configure Mangum with explicit settings to handle Lambda invocations properly
+# lifespan='off' prevents issues when invoked directly (not via API Gateway)
+# enable_lifespan=False for older Mangum versions compatibility
+handler = Mangum(
+    app,
+    lifespan="off",  # Disable ASGI lifespan for Lambda
+)
