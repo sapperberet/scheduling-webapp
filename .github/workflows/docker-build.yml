@@ -27,6 +27,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_REPO_NAME: scheduling-solver-worker
           IMAGE_TAG: ${{ github.sha }}
+          DOCKER_BUILDKIT: 0
         run: |
           docker build --no-cache -f Dockerfile.worker -t $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG -t $ECR_REGISTRY/$IMAGE_REPO_NAME:latest .
           docker push $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG
