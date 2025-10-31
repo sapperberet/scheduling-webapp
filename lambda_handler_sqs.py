@@ -357,36 +357,38 @@ def handler(event, context):
     """
     AWS Lambda handler supporting both HTTP (API Gateway v2) and SQS events.
     """
-    logger.info(f"[HANDLER_START] Event type: {type(event)}, Keys: {list(event.keys()) if isinstance(event, dict) else 'N/A'}")
+    print(f"[HANDLER_START] Event keys: {list(event.keys()) if isinstance(event, dict) else type(event).__name__}")
+    print(f"[HANDLER_START] Event: {json.dumps(event, default=str, indent=2)[:500]}")
     
     try:
         # Handle API Gateway v2 HTTP events
         if isinstance(event, dict):
-            # Check for HTTP event indicators
+            # Check for HTTP event indicators (API Gateway v2)
             if 'requestContext' in event or 'rawPath' in event:
-                method = event.get('requestContext', {}).get('http', {}).get('method', 'UNKNOWN')
-                path = event.get('rawPath', '/')
-                logger.info(f"[HANDLER] HTTP Event: {method} {path}")
-                logger.info(f"[HANDLER] Routing to Mangum")
+                print(f"[HANDLER] Detected HTTP event from API Gateway v2")
                 result = mangum_handler(event, context)
-                logger.info(f"[HANDLER] Mangum returned: {type(result)}")
+                print(f"[HANDLER] Mangum response type: {type(result).__name__}")
+                if isinstance(result, dict):
+                    print(f"[HANDLER] Response keys: {list(result.keys())}")
+                    print(f"[HANDLER] Response statusCode: {result.get('statusCode')}")
                 return result
             
             # Handle SQS events
             elif 'Records' in event:
-                logger.info(f"[HANDLER] SQS Event with {len(event['Records'])} record(s)")
+                print(f"[HANDLER] Detected SQS event")
                 return {
                     "statusCode": 200,
                     "body": json.dumps({"message": "SQS messages accepted"})
                 }
         
         # Default: try Mangum
-        logger.info(f"[HANDLER] Unknown format, attempting Mangum anyway")
+        print(f"[HANDLER] Unknown format, trying Mangum")
         result = mangum_handler(event, context)
-        logger.info(f"[HANDLER] Result: {type(result)}")
+        print(f"[HANDLER] Final result type: {type(result).__name__}")
         return result
         
     except Exception as e:
+        print(f"[HANDLER_ERROR] {type(e).__name__}: {str(e)}")
         logger.error(f"[HANDLER_ERROR] {e}", exc_info=True)
         raise
 
