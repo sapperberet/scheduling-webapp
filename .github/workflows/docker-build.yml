@@ -25,6 +25,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
     
+    - name: Debug environment
+      run: |
+        echo "Repository root:"
+        pwd
+        echo ""
+        echo "Files in root:"
+        ls -la | head -30
+        echo ""
+        echo "Dockerfile.worker exists:"
+        test -f Dockerfile.worker && echo "✅ YES" || echo "❌ NO"
+    
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
