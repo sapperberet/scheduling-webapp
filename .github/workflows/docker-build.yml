@@ -1,140 +1,43 @@
-name: Build and Deploy Lambda Docker Image
+﻿name: Build and Deploy Lambda
 
 on:
   push:
-    branches:
-      - master
-      - main
-      - develop
-    paths:
-      - 'Dockerfile.worker'
-      - 'lambda_handler_sqs.py'
-      - 'lambda_handler.py'
-      - 'requirements-solver.txt'
-      - '.github/workflows/docker-build.yml'
-  workflow_dispatch:  # Allow manual trigger
-
-permissions:
-  contents: read
+    branches: [master]
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Debug environment
-      run: |
-        echo "Repository root:"
-        pwd
-        echo ""
-        echo "Files in root:"
-        ls -la | head -30
-        echo ""
-        echo "Dockerfile.worker exists:"
-        test -f Dockerfile.worker && echo "✅ YES" || echo "❌ NO"
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-    
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
-    
-    - name: Build Docker image
-      id: build-image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: scheduling-solver-worker
-        IMAGE_TAG: ${{ github.sha }}
-        BRANCH_TAG: ${{ github.ref_name }}
-        DOCKER_BUILDKIT: 0
-      run: |
-        # Build with standard docker build (no buildkit, no cache issues)
-        docker build --no-cache \
-          -f Dockerfile.worker \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-          .
-        
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-    
-    - name: Push to ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: scheduling-solver-worker
-        IMAGE_TAG: ${{ github.sha }}
-        BRANCH_TAG: ${{ github.ref_name }}
-      run: |
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$BRANCH_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        
-        # Get image digest for Lambda update
-        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
-        echo "Pushed image: $DIGEST"
-        echo "image_uri=$DIGEST" >> $GITHUB_ENV
-    
-    - name: Verify ECR image manifest type
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: scheduling-solver-worker
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        # Wait for image to be available
-        sleep 5
-        
-        MANIFEST_TYPE=$(aws ecr describe-images \
-          --repository-name $ECR_REPOSITORY \
-          --image-ids imageTag=$IMAGE_TAG \
-          --query 'imageDetails[0].imageManifestMediaType' \
-          --output text)
-        
-        echo "Image manifest type: $MANIFEST_TYPE"
-        
-        if [[ "$MANIFEST_TYPE" == "application/vnd.oci.image.manifest.v1+json" ]]; then
-          echo "✅ Manifest type is correct (single image manifest)"
-        else
-          echo "❌ ERROR: Manifest type is $MANIFEST_TYPE (expected application/vnd.oci.image.manifest.v1+json)"
-          exit 1
-        fi
-    
-    - name: Update Lambda function
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: scheduling-solver-worker
-        IMAGE_TAG: ${{ github.sha }}
-        LAMBDA_FUNCTION: scheduling-solver-worker
-      run: |
-        IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-        
-        echo "Updating Lambda with: $IMAGE_URI"
-        
-        aws lambda update-function-code \
-          --function-name $LAMBDA_FUNCTION \
-          --image-uri $IMAGE_URI
-        
-        # Wait for update to complete
-        echo "Waiting for Lambda update to complete..."
-        aws lambda wait function-updated \
-          --function-name $LAMBDA_FUNCTION
-        
-        echo "✅ Lambda function updated successfully"
-    
-    - name: Verify Lambda deployment
-      env:
-        LAMBDA_FUNCTION: scheduling-solver-worker
-      run: |
-        # Get updated function info
-        aws lambda get-function \
-          --function-name $LAMBDA_FUNCTION \
-          --query 'Configuration.[FunctionName,State,LastUpdateStatus]' \
-          --output table
-
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build and push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO_NAME: scheduling-solver-worker
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --no-cache -f Dockerfile.worker -t $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG -t $ECR_REGISTRY/$IMAGE_REPO_NAME:latest .
+          docker push $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$IMAGE_REPO_NAME:latest
+      
+      - name: Update Lambda
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_REPO_NAME: scheduling-solver-worker
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws lambda update-function-code --function-name scheduling-solver-worker --image-uri $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG
+          aws lambda wait function-updated --function-name scheduling-solver-worker
+          aws lambda get-function --function-name scheduling-solver-worker --query 'Configuration.[FunctionName,State,CodeSha256]' --output table
