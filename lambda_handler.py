@@ -307,7 +307,7 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
 
 @app.post("/solve")
 async def solve(case: SchedulingCase, background_tasks: BackgroundTasks):
-    """Start optimization (async - returns immediately)"""
+    """Start optimization (synchronous - runs within Lambda timeout)"""
     try:
         run_id = str(uuid.uuid4())
         
@@ -320,20 +320,38 @@ async def solve(case: SchedulingCase, background_tasks: BackgroundTasks):
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        # Start background task
-        background_tasks.add_task(run_optimization, case.dict(), run_id)
+        logger.info(f"[SOLVE] Starting optimization run: {run_id}")
         
-        logger.info(f"[SOLVE] Started optimization run: {run_id}")
+        # Run optimization SYNCHRONOUSLY (important for Lambda)
+        # Lambda has up to 15 minutes timeout, which is enough for most cases
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await run_optimization(case.dict(), run_id)
         
-        return {
+        logger.info(f"[SOLVE] Completed optimization run: {run_id}")
+        
+        # Return the completed result
+        run_data = active_runs[run_id]
+        response = {
             "run_id": run_id,
-            "status": "processing",
-            "progress": 0,
-            "message": "Optimization started"
+            "status": run_data["status"],
+            "progress": run_data.get("progress", 100),
+            "message": run_data["message"]
         }
         
+        if run_data["status"] == "completed":
+            response["results"] = run_data.get("result")
+            response["output_directory"] = run_data.get("output_directory")
+        
+        if run_data["status"] == "failed":
+            response["error"] = run_data.get("error", "Unknown error")
+        
+        return response
+        
     except Exception as e:
-        logger.error(f"[ERROR] Failed to start optimization: {e}")
+        logger.error(f"[ERROR] Failed to run optimization: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
