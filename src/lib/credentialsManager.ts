@@ -53,12 +53,16 @@ async function getCredentialsFromS3(): Promise<UserCredentials | null> {
     const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.AWS_REGION || 'us-east-1';
     
+    // On AWS Lambda/Amplify, use IAM role (no explicit credentials needed)
+    // On local, use explicit credentials from env vars
     const s3Client = new S3Client({
       region,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-      },
+      ...(process.env.AWS_ACCESS_KEY_ID ? {
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        }
+      } : {})
     });
     
     const command = new GetObjectCommand({
@@ -96,24 +100,23 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     
     const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.AWS_REGION || 'us-east-1';
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID || '';
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY || '';
     
     console.log('[DEBUG] S3 Configuration:', {
       bucket,
       region,
-      hasAccessKey: !!accessKeyId,
-      hasSecretKey: !!secretAccessKey,
-      accessKeyLength: accessKeyId.length,
-      secretKeyLength: secretAccessKey.length
+      hasExplicitCredentials: !!process.env.AWS_ACCESS_KEY_ID
     });
     
+    // On AWS Lambda/Amplify, use IAM role (no explicit credentials needed)
+    // On local, use explicit credentials from env vars
     const s3Client = new S3Client({
       region,
-      credentials: {
-        accessKeyId,
-        secretAccessKey,
-      },
+      ...(process.env.AWS_ACCESS_KEY_ID ? {
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        }
+      } : {})
     });
     
     console.log('[DEBUG] S3 Client created, preparing PutObjectCommand');
