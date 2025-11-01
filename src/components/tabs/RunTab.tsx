@@ -1014,20 +1014,24 @@ export default function RunTab() {
               // Poll status endpoint
               const statusPollInterval = setInterval(async () => {
                 try {
-                  const statusResp = await fetch(`${process.env.REACT_APP_AWS_SOLVER_URL || 'https://iiittt6g5f.execute-api.us-east-1.amazonaws.com'}/status/${awsResult.run_id}`);
+                  const statusResp = await fetch(`${AWS_SOLVER_URL}/status/${awsResult.run_id}`);
                   if (statusResp.ok) {
                     const statusData = await statusResp.json();
                     if (statusData.progress !== undefined) {
                       setProgress(statusData.progress);
+                      addLog(`[PROGRESS] ${Math.round(statusData.progress)}% - ${statusData.message || 'Processing...'}`, 'info');
                     }
                     if (statusData.status === 'completed') {
                       clearInterval(statusPollInterval);
                       result = statusData;
                       setProgress(100);
                     }
+                  } else {
+                    console.error('Status response not ok:', statusResp.status);
                   }
                 } catch (e) {
-                  console.warn('Status poll error:', e);
+                  console.error('Status poll error:', e);
+                  addLog(`[DEBUG] Polling error: ${e}`, 'warning');
                 }
               }, 2000); // Poll every 2 seconds
               
