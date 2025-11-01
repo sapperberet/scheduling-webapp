@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
     EMAIL_FROM_ADDRESS: process.env.EMAIL_FROM_ADDRESS,
     SENDGRID_API_KEY: process.env.SENDGRID_API_KEY,
     BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
+    // S3 credentials (Amplify-compatible, not using AWS_ prefix)
+    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
   },
 };
 
