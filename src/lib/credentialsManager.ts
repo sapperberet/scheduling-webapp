@@ -144,21 +144,14 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
 
 // Read current credentials from environment variables, S3, or file
 export async function getCurrentCredentials(): Promise<UserCredentials> {
-  // In serverless environments, try S3 first, then fall back to environment variables
+  // In serverless environments, use environment variables only
+  // S3 approach requires IAM permissions that may not be available
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Loading credentials from serverless environment');
+    console.log('[INFO] Loading credentials from environment variables (serverless)');
     
-    // Try S3 first
-    const s3Credentials = await getCredentialsFromS3();
-    if (s3Credentials) {
-      return s3Credentials;
-    }
-    
-    // Fallback to environment variables
     const username = process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL || 'admin@scheduling.com';
     const password = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD_HASH || 'admin123';
     
-    console.log('[INFO] Using environment variables for credentials (S3 fallback)');
     return {
       username,
       password,
@@ -193,21 +186,12 @@ export async function getCurrentCredentials(): Promise<UserCredentials> {
 
 // Update credentials
 export async function updateCredentials(username: string, password: string): Promise<boolean> {
-  // In serverless environments, save to S3
+  // In serverless environments, credentials must be updated via environment variables
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Updating credentials in serverless environment (S3)');
-    
-    const newCredentials: UserCredentials = {
-      username,
-      password,
-      updatedAt: new Date().toISOString()
-    };
-    
-    const success = await saveCredentialsToS3(newCredentials);
-    if (success) {
-      console.log('[OK] Credentials updated successfully in S3');
-    }
-    return success;
+    console.log('[WARN] Cannot update credentials in serverless environment');
+    console.log('[INFO] Credentials are managed through environment variables');
+    console.log('[INFO] Update ADMIN_USERNAME and ADMIN_PASSWORD in Amplify Console');
+    return false;
   }
 
   // For local development, update the file
