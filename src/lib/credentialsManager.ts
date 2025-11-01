@@ -53,12 +53,28 @@ async function getCredentialsFromS3(): Promise<UserCredentials | null> {
     const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.NEXT_PUBLIC_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
     
+    // Debug: Log what env vars are actually available
+    console.log('[DEBUG] Available S3 credentials:', {
+      hasS3AccessKey: !!process.env.S3_ACCESS_KEY_ID,
+      hasAWSAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+      hasPublicBucket: !!process.env.NEXT_PUBLIC_AWS_S3_BUCKET,
+      s3KeyPrefix: process.env.S3_ACCESS_KEY_ID?.substring(0, 8) || 'MISSING',
+      awsKeyPrefix: process.env.AWS_ACCESS_KEY_ID?.substring(0, 8) || 'MISSING'
+    });
+    
     // Use S3_ prefixed env vars (Amplify doesn't allow AWS_ prefix)
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '';
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '';
+    
+    if (!accessKeyId || !secretAccessKey) {
+      throw new Error(`Missing S3 credentials. Please set S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in Amplify environment variables. Found: accessKeyId=${!!accessKeyId}, secretAccessKey=${!!secretAccessKey}`);
+    }
+    
     const s3Client = new S3Client({
       region,
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
+        accessKeyId,
+        secretAccessKey,
       }
     });
     
@@ -96,7 +112,8 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     console.log('[DEBUG] Starting S3 credentials save');
     console.log('[DEBUG] Environment check:', {
       isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME,
-      hasS3AccessKey: !!(process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID),
+      hasS3AccessKey: !!process.env.S3_ACCESS_KEY_ID,
+      hasAWSAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
       region: process.env.NEXT_PUBLIC_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
       bucket: process.env.NEXT_PUBLIC_AWS_S3_BUCKET || process.env.AWS_S3_BUCKET || 'scheduling-solver-results'
     });
@@ -109,11 +126,18 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     console.log('[DEBUG] Creating S3 client with explicit credentials (using S3_ prefix for Amplify)');
     
     // Use S3_ prefixed env vars (Amplify doesn't allow AWS_ prefix)
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '';
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '';
+    
+    if (!accessKeyId || !secretAccessKey) {
+      throw new Error(`Missing S3 credentials. Please set S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in Amplify environment variables. Found: accessKeyId=${!!accessKeyId}, secretAccessKey=${!!secretAccessKey}`);
+    }
+    
     const s3Client = new S3Client({
       region,
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
+        accessKeyId,
+        secretAccessKey,
       }
     });
     
