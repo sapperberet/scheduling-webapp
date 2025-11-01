@@ -31,6 +31,16 @@ Your AWS Lambda solver will store all results directly in AWS S3.
 - Updates every 3 seconds during solving
 - Proper cleanup on completion or error
 
+### 5. ✅ **NEW: Worker Lambda Result Serialization Fixed (LATEST)**
+- **Issue**: Worker Lambda stored status to S3 without the actual result object
+- **Fix**: Updated `lambda_worker_handler.py` to include full `result` object in status.json
+- **Impact**: Frontend polling now receives complete results with solutions and solver stats
+- **Status Flow**: 
+  - Worker stores: `runs/{run_id}/status.json` (NOW with result object) ✅
+  - Frontend polls: `/status/{run_id}` every 2 seconds
+  - API returns: Complete result with solutions ✅
+  - Results display: 100% with all solver data ✅
+
 ## 🔄 Next Steps
 
 ### 1. Restart Your Dev Server
