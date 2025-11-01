@@ -23,7 +23,14 @@ from typing import Dict, Any, List, Tuple
 import shutil
 import glob
 
+# Configure logging to ensure output is visible
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    force=True
+)
 logger = logging.getLogger("solver-core-real")
+logger.setLevel(logging.INFO)
 
 def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, Any]]:
     """
@@ -48,6 +55,8 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
     
     logger.info(f"[SOLVER] Starting REAL optimization using testcase_gui.Solve_test_case()")
     logger.info(f"[SOLVER] Case file: {case_file_path}")
+    print(f"[SOLVER] Starting REAL optimization using testcase_gui.Solve_test_case()", flush=True)
+    print(f"[SOLVER] Case file: {case_file_path}", flush=True)
     
     output_dir = None
     
@@ -59,6 +68,7 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
         try:
             os.chdir(work_dir)
             logger.info(f"[SOLVER] Working directory: {work_dir}")
+            print(f"[SOLVER] Working directory: {work_dir}", flush=True)
             
             # Import the REAL solver from testcase_gui
             # This will import tkinter but won't use it since we're not calling GUI functions
@@ -71,11 +81,14 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
             
             # Call the REAL solver
             logger.info("[SOLVER] Calling testcase_gui.Solve_test_case()...")
+            print("[SOLVER] Calling testcase_gui.Solve_test_case()...", flush=True)
             tables, meta = testcase_gui.Solve_test_case(case_file_path)
             logger.info(f"[SOLVER] Solver completed. Generated {len(tables)} solution(s)")
+            print(f"[SOLVER] Solver completed. Generated {len(tables)} solution(s)", flush=True)
             
             # Check if solver created an 'out' directory or Result_N directories
             logger.info(f"[INFO] Contents of {work_dir}: {os.listdir(work_dir)}")
+            print(f"[INFO] Contents of {work_dir}: {os.listdir(work_dir)}", flush=True)
             
             out_path = os.path.join(work_dir, 'out')
             if not os.path.exists(out_path):
