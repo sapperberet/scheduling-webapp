@@ -70,12 +70,21 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
             tables, meta = testcase_gui.Solve_test_case(case_file_path)
             logger.info(f"[SOLVER] Solver completed. Generated {len(tables)} solution(s)")
             
-            # Check if solver created an 'out' directory
+            # Check if solver created an 'out' directory or Result_N directories
+            logger.info(f"[INFO] Contents of {work_dir}: {os.listdir(work_dir)}")
+            
             out_path = os.path.join(work_dir, 'out')
             if not os.path.exists(out_path):
-                logger.warning(f"[WARN] No 'out' directory created by solver in {work_dir}")
-                logger.info(f"[INFO] Contents of {work_dir}: {os.listdir(work_dir)}")
-                out_path = work_dir  # Use working directory as fallback
+                # Check for Result_* directories (solver creates Result_1, Result_2, etc.)
+                result_dirs = [d for d in os.listdir(work_dir) if d.startswith('Result_') and os.path.isdir(os.path.join(work_dir, d))]
+                if result_dirs:
+                    logger.info(f"[SOLVER] Found Result directories: {result_dirs}")
+                    # Use working directory to include ALL Result_* directories
+                    out_path = work_dir
+                    logger.info(f"[SOLVER] Using output path: {out_path} (contains {len(result_dirs)} Result directories)")
+                else:
+                    logger.warning(f"[WARN] No 'out' or 'Result_*' directory created by solver in {work_dir}")
+                    out_path = work_dir  # Use working directory as fallback
             
             # Copy all output files to /tmp/solver_output_*
             output_dir = os.path.join('/tmp', f'solver_output_{int(datetime.utcnow().timestamp() * 1000)}')
