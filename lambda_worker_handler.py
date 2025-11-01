@@ -131,11 +131,13 @@ def get_next_result_number() -> int:
         logger.warning(f"[WARN] Error getting next result number: {e}")
         return 1
 
-def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -> str:
+def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str, runtime_seconds: float = 0.0) -> str:
     """Upload optimization results to S3"""
     try:
         result_num = get_next_result_number()
         folder_name = f"result_{result_num}"
+        
+        logger.info(f"[S3] Uploading results to {folder_name} (runtime: {runtime_seconds:.2f}s)")
         
         # Upload JSON result
         result_key = f"{folder_name}/result.json"
@@ -148,7 +150,11 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -
         logger.info(f"[S3] Uploaded result.json to {result_key}")
         
         # Upload files from output directory if it exists
+        uploaded_files = 1  # Count result.json
         if os.path.isdir(output_dir):
+            logger.info(f"[S3] Scanning output directory: {output_dir}")
+            logger.info(f"[S3] Files found: {os.listdir(output_dir)}")
+            
             for file_name in os.listdir(output_dir):
                 file_path = os.path.join(output_dir, file_name)
                 if os.path.isfile(file_path):
@@ -161,6 +167,12 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -
                             content_type = 'text/csv'
                         elif file_name.endswith('.json'):
                             content_type = 'application/json'
+                        elif file_name.endswith('.xlsx'):
+                            content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        elif file_name.endswith('.xls'):
+                            content_type = 'application/vnd.ms-excel'
+                        elif file_name.endswith('.log'):
+                            content_type = 'text/plain'
                         else:
                             content_type = 'application/octet-stream'
                         
@@ -171,9 +183,12 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -
                             Body=file_content,
                             ContentType=content_type
                         )
-                        logger.info(f"[S3] Uploaded {file_name} to {s3_key}")
+                        logger.info(f"[S3] Uploaded {file_name} ({len(file_content)} bytes) to {s3_key}")
+                        uploaded_files += 1
                     except Exception as e:
                         logger.warning(f"[WARN] Failed to upload {file_name}: {e}")
+        else:
+            logger.warning(f"[WARN] Output directory not found or not a directory: {output_dir}")
         
         # Upload metadata
         metadata = {
@@ -182,7 +197,9 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -
             'solver_type': 'aws_lambda_worker',
             'solutions_count': len(result.get('solutions', [])),
             'folder_name': folder_name,
-            'result_number': result_num
+            'result_number': result_num,
+            'runtime_seconds': round(runtime_seconds, 2),
+            'file_count': uploaded_files
         }
         
         metadata_key = f"{folder_name}/metadata.json"
@@ -202,13 +219,16 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str) -
 
 def run_optimization(case_data: Dict[str, Any], run_id: str):
     """Run the optimization solver"""
+    start_time = time.time()  # Track solver start time
+    
     status = {
         "run_id": run_id,
         "status": "processing",
         "progress": 0,
         "message": "Optimization started",
         "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.utcnow().isoformat(),
+        "started_at": start_time
     }
     
     try:
@@ -316,8 +336,11 @@ def run_optimization(case_data: Dict[str, Any], run_id: str):
         status["message"] = "Uploading results to S3..."
         store_status_to_s3(run_id, status)
         
-        # Upload to S3
-        folder_name = upload_results_to_s3(run_id, result, output_dir)
+        # Calculate runtime
+        runtime_seconds = time.time() - start_time
+        
+        # Upload to S3 with runtime
+        folder_name = upload_results_to_s3(run_id, result, output_dir, runtime_seconds)
         
         status["progress"] = 95
         status["message"] = "Finalizing..."
