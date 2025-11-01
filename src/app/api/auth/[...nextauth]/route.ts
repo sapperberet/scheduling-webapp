@@ -64,7 +64,7 @@ if (isMissingSecretInProd) {
         }
 
         // Load current credentials dynamically each time
-        const isValid = validateCredentials(credentials.email, credentials.password);
+        const isValid = await validateCredentials(credentials.email, credentials.password);
         console.log('[Info] Credential validation:', { 
           isValid,
           providedEmail: credentials.email,
