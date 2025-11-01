@@ -72,8 +72,8 @@ const initialState: SchedulingState = {
   hasLoadedFromStorage: false,
 };
 
-// Function to save scheduling state to localStorage
-function saveSchedulingState(state: SchedulingState): void {
+// Function to save scheduling state to localStorage AND S3 (centralized)
+async function saveSchedulingState(state: SchedulingState): Promise<void> {
   if (typeof window === 'undefined') return;
   
   try {
@@ -84,9 +84,22 @@ function saveSchedulingState(state: SchedulingState): void {
       selectedProvider: state.selectedProvider,
       timestamp: new Date().toISOString(),
     };
+    
+    // Save to localStorage (local backup)
     localStorage.setItem(SCHEDULING_STATE_STORAGE_KEY, JSON.stringify(stateToSave));
+    
+    // ALSO save case to S3 (centralized for all devices)
+    try {
+      const { CentralCaseService } = await import('@/lib/centralCaseService');
+      if (CentralCaseService.isAvailable()) {
+        await CentralCaseService.saveActiveCase(state.case);
+        console.log('[SAVE] ✅ Case saved to S3 (visible to all devices)');
+      }
+    } catch (error) {
+      console.warn('[SAVE] Failed to save to S3, but localStorage saved:', error);
+    }
   } catch (error) {
-    console.warn('Failed to save scheduling state to localStorage:', error);
+    console.warn('Failed to save scheduling state:', error);
   }
 }
 

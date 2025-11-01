@@ -60,7 +60,18 @@ export default function Home() {
       dispatch({ type: 'SET_LOADING', payload: true });
       
       try {
-        const caseData = await loadCaseFromFile();
+        // PRIORITY 1: Try to load from S3 (centralized case for all devices)
+        const { CentralCaseService } = await import('@/lib/centralCaseService');
+        let caseData = await CentralCaseService.loadActiveCase();
+        
+        // PRIORITY 2: Fallback to local case file if S3 doesn't have one yet
+        if (!caseData) {
+          console.log('[INIT] No centralized case in S3, loading from local file');
+          caseData = await loadCaseFromFile();
+        } else {
+          console.log('[INIT] ✅ Loaded centralized case from S3 (shared across all devices)');
+        }
+        
         if (caseData) {
           dispatch({ type: 'LOAD_CASE', payload: caseData });
           // Ensure calendar contains a navigable range of future months (defensive)

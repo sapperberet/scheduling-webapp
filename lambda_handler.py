@@ -631,6 +631,84 @@ async def root():
     }
 
 
+@app.get("/case/active")
+async def get_active_case():
+    """Get the current active case configuration from S3"""
+    try:
+        # Load the active case from S3
+        case_key = "config/active_case.json"
+        
+        try:
+            obj = s3_client.get_object(Bucket=S3_BUCKET, Key=case_key)
+            case_data = json.loads(obj['Body'].read())
+            logger.info(f"[CASE] Loaded active case from S3: {case_key}")
+            return {
+                "status": "success",
+                "case": case_data,
+                "last_modified": obj['LastModified'].isoformat()
+            }
+        except s3_client.exceptions.NoSuchKey:
+            logger.warning(f"[CASE] No active case found in S3: {case_key}")
+            raise HTTPException(status_code=404, detail="No active case configuration found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to load active case: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/case/save")
+async def save_active_case(case_data: Dict[str, Any]):
+    """Save the active case configuration to S3 (admin only)"""
+    try:
+        case_key = "config/active_case.json"
+        
+        # Add metadata
+        case_with_metadata = {
+            **case_data,
+            "_metadata": {
+                "saved_at": datetime.utcnow().isoformat(),
+                "version": "1.0"
+            }
+        }
+        
+        # Save to S3
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=case_key,
+            Body=json.dumps(case_with_metadata, indent=2),
+            ContentType='application/json',
+            Metadata={
+                'saved-at': datetime.utcnow().isoformat(),
+                'content-type': 'scheduling-case-config'
+            }
+        )
+        
+        logger.info(f"[CASE] Saved active case to S3: {case_key}")
+        
+        # Also create a timestamped backup
+        backup_key = f"config/backups/case_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=backup_key,
+            Body=json.dumps(case_with_metadata, indent=2),
+            ContentType='application/json'
+        )
+        logger.info(f"[CASE] Created backup: {backup_key}")
+        
+        return {
+            "status": "success",
+            "message": "Case configuration saved successfully",
+            "key": case_key,
+            "backup_key": backup_key
+        }
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to save active case: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # AWS Lambda handler (using Mangum)
 # Configure with lifespan='off' to handle direct Lambda invocations
 handler = Mangum(
