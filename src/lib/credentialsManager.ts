@@ -96,16 +96,19 @@ async function getCredentialsFromS3(): Promise<UserCredentials | null> {
 async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolean> {
   try {
     console.log('[DEBUG] Starting S3 credentials save');
+    console.log('[DEBUG] Environment check:', {
+      isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME,
+      hasExplicitCreds: !!process.env.AWS_ACCESS_KEY_ID,
+      region: process.env.AWS_REGION || 'us-east-1',
+      bucket: process.env.AWS_S3_BUCKET || 'scheduling-solver-results'
+    });
+    
     const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
     
     const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.AWS_REGION || 'us-east-1';
     
-    console.log('[DEBUG] S3 Configuration:', {
-      bucket,
-      region,
-      hasExplicitCredentials: !!process.env.AWS_ACCESS_KEY_ID
-    });
+    console.log('[DEBUG] Creating S3 client with IAM role (no explicit credentials)');
     
     // On AWS Lambda/Amplify, use IAM role (no explicit credentials needed)
     // On local, use explicit credentials from env vars
@@ -121,22 +124,34 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     
     console.log('[DEBUG] S3 Client created, preparing PutObjectCommand');
     
+    const credentialsJson = JSON.stringify(credentials, null, 2);
+    console.log('[DEBUG] Credentials to save:', {
+      username: credentials.username,
+      passwordLength: credentials.password.length,
+      updatedAt: credentials.updatedAt,
+      jsonLength: credentialsJson.length
+    });
+    
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: 'system/credentials.json',
-      Body: JSON.stringify(credentials, null, 2),
+      Body: credentialsJson,
       ContentType: 'application/json'
     });
     
     console.log('[DEBUG] Sending PutObjectCommand to S3');
-    await s3Client.send(command);
-    console.log('[OK] Credentials saved to S3');
+    const result = await s3Client.send(command);
+    console.log('[DEBUG] S3 PutObject response:', result);
+    console.log('[OK] Credentials saved to S3 successfully');
     return true;
   } catch (error) {
-    console.error('[ERROR] Failed to save credentials to S3:', {
-      error: error instanceof Error ? error.message : String(error),
-      errorName: error instanceof Error ? error.name : 'Unknown',
-      errorStack: error instanceof Error ? error.stack : undefined
+    console.error('[ERROR] Failed to save credentials to S3:');
+    console.error('[ERROR] Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      code: (error as {Code?: string; code?: string})?.Code || (error as {Code?: string; code?: string})?.code,
+      statusCode: (error as {$metadata?: {httpStatusCode?: number}})?.$metadata?.httpStatusCode,
+      stack: error instanceof Error ? error.stack : undefined
     });
     return false;
   }
