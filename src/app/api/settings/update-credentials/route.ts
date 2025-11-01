@@ -42,23 +42,12 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Update credentials (works on local only)
+    // Update credentials (saves to S3 on AWS, local file on dev)
     const updateSuccess = await updateCredentials(newUsername, newPassword);
     
     if (!updateSuccess) {
-      // On AWS Amplify, credentials cannot be updated through UI
-      if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.AWS_EXECUTION_ENV) {
-        return NextResponse.json(
-          { 
-            message: 'On AWS Amplify, credentials are managed through environment variables. Go to Amplify Console → Environment variables → Update ADMIN_USERNAME and ADMIN_PASSWORD → Redeploy',
-            isAWS: true
-          },
-          { status: 403 }
-        );
-      }
-      
       return NextResponse.json(
-        { message: 'Failed to update credentials' },
+        { message: 'Failed to update credentials - check server logs for details' },
         { status: 500 }
       );
     }
