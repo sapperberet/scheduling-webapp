@@ -306,50 +306,60 @@ async def run_optimization(case_data: Dict[str, Any], run_id: str):
 # ============================================================================
 
 @app.post("/solve")
-async def solve(case: SchedulingCase, background_tasks: BackgroundTasks):
-    """Start optimization (synchronous - runs within Lambda timeout)"""
+async def solve(case: SchedulingCase):
+    """Start optimization (queues work, returns immediately)"""
     try:
         run_id = str(uuid.uuid4())
         
         # Initialize run state
         active_runs[run_id] = {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "Optimization started",
+            "message": "Optimization queued, waiting to start",
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        logger.info(f"[SOLVE] Starting optimization run: {run_id}")
+        logger.info(f"[SOLVE] Queued optimization run: {run_id}")
         
-        # Run optimization SYNCHRONOUSLY (important for Lambda)
-        # Lambda has up to 15 minutes timeout, which is enough for most cases
-        import asyncio
-        loop = asyncio.get_event_loop()
-        await run_optimization(case.dict(), run_id)
+        # Queue the work on SQS to be processed by scheduling-solver-worker Lambda
+        sqs_client = boto3.client('sqs', region_name=AWS_REGION)
+        queue_url = os.environ.get('SOLVER_QUEUE_URL', '')
         
-        logger.info(f"[SOLVE] Completed optimization run: {run_id}")
+        if queue_url:
+            try:
+                sqs_client.send_message(
+                    QueueUrl=queue_url,
+                    MessageBody=json.dumps({
+                        "run_id": run_id,
+                        "case_data": case.dict()
+                    })
+                )
+                logger.info(f"[SOLVE] Sent run {run_id} to SQS queue")
+            except Exception as queue_error:
+                logger.error(f"[ERROR] Failed to queue on SQS: {queue_error}")
+                # Don't fail the response, just log it
+                # Client can still poll status
+        else:
+            # If no SQS queue configured, run synchronously as fallback
+            logger.warning("[WARN] No SOLVER_QUEUE_URL configured, running synchronously as fallback")
+            active_runs[run_id]["status"] = "processing"
+            active_runs[run_id]["message"] = "Optimization started (running synchronously)"
+            import asyncio
+            await run_optimization(case.dict(), run_id)
         
-        # Return the completed result
-        run_data = active_runs[run_id]
+        # Return immediately with queued status
         response = {
             "run_id": run_id,
-            "status": run_data["status"],
-            "progress": run_data.get("progress", 100),
-            "message": run_data["message"]
+            "status": "queued",
+            "progress": 0,
+            "message": "Optimization queued"
         }
-        
-        if run_data["status"] == "completed":
-            response["results"] = run_data.get("result")
-            response["output_directory"] = run_data.get("output_directory")
-        
-        if run_data["status"] == "failed":
-            response["error"] = run_data.get("error", "Unknown error")
         
         return response
         
     except Exception as e:
-        logger.error(f"[ERROR] Failed to run optimization: {e}")
+        logger.error(f"[ERROR] Failed to queue optimization: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
