@@ -368,26 +368,53 @@ async def solve(case: SchedulingCase):
 @app.get("/status/{run_id}")
 async def get_status(run_id: str):
     """Get optimization status and progress"""
-    if run_id not in active_runs:
+    
+    # First check in-memory cache
+    if run_id in active_runs:
+        run_data = active_runs[run_id]
+        response = {
+            "status": run_data["status"],
+            "message": run_data["message"],
+            "run_id": run_id,
+            "progress": run_data.get("progress", 0)
+        }
+        
+        if run_data["status"] == "completed":
+            response["results"] = run_data.get("result")
+            response["output_directory"] = run_data.get("output_directory")
+        
+        if run_data["status"] == "failed":
+            response["error"] = run_data.get("error", "Unknown error")
+        
+        return response
+    
+    # If not in memory, check S3 for status file
+    # The worker Lambda stores status in S3 for cross-Lambda communication
+    try:
+        status_key = f"runs/{run_id}/status.json"
+        obj = s3_client.get_object(Bucket=S3_BUCKET, Key=status_key)
+        status_data = json.loads(obj['Body'].read())
+        
+        response = {
+            "status": status_data.get("status", "unknown"),
+            "message": status_data.get("message", ""),
+            "run_id": run_id,
+            "progress": status_data.get("progress", 0)
+        }
+        
+        if status_data.get("status") == "completed":
+            response["results"] = status_data.get("result")
+            response["output_directory"] = status_data.get("output_directory")
+        
+        if status_data.get("status") == "failed":
+            response["error"] = status_data.get("error", "Unknown error")
+        
+        return response
+    except s3_client.exceptions.NoSuchKey:
         raise HTTPException(status_code=404, detail="Run not found")
-    
-    run_data = active_runs[run_id]
-    
-    response = {
-        "status": run_data["status"],
-        "message": run_data["message"],
-        "run_id": run_id,
-        "progress": run_data.get("progress", 0)
-    }
-    
-    if run_data["status"] == "completed":
-        response["results"] = run_data.get("result")
-        response["output_directory"] = run_data.get("output_directory")
-    
-    if run_data["status"] == "failed":
-        response["error"] = run_data.get("error", "Unknown error")
-    
-    return response
+    except Exception as e:
+        logger.error(f"[ERROR] Error getting status for {run_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/results/folders")
