@@ -45,35 +45,98 @@ function initializeCredentials() {
 /**
  * Get credentials from S3 (for AWS/Amplify deployments)
  * Falls back to environment variables
- * DEPRECATED: Now using environment variables directly
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getCredentialsFromS3(): Promise<UserCredentials | null> {
-  // No longer used - environment variables are source of truth
+  try {
+    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+    
+    const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
+    const region = process.env.AWS_REGION || 'us-east-1';
+    
+    const s3Client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      },
+    });
+    
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: 'system/credentials.json'
+    });
+    
+    const response = await s3Client.send(command);
+    const bodyContent = await response.Body?.transformToString();
+    
+    if (bodyContent) {
+      const credentials = JSON.parse(bodyContent) as UserCredentials;
+      console.log('[INFO] Loaded credentials from S3');
+      return credentials;
+    }
+  } catch (error: unknown) {
+    const err = error as { name?: string; Code?: string };
+    if (err.name === 'NoSuchKey' || err.Code === 'NoSuchKey') {
+      console.log('[INFO] Credentials not found in S3, using environment variables');
+    } else {
+      console.warn('[WARN] Error reading credentials from S3:', error);
+    }
+  }
+  
   return null;
 }
 
 /**
  * Save credentials to S3 (for AWS/Amplify deployments)
- * DEPRECATED: Now using environment variables directly
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolean> {
-  // No longer used - environment variables are source of truth
-  return false;
+  try {
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    
+    const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
+    const region = process.env.AWS_REGION || 'us-east-1';
+    
+    const s3Client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      },
+    });
+    
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: 'system/credentials.json',
+      Body: JSON.stringify(credentials, null, 2),
+      ContentType: 'application/json'
+    });
+    
+    await s3Client.send(command);
+    console.log('[OK] Credentials saved to S3');
+    return true;
+  } catch (error) {
+    console.error('[ERROR] Failed to save credentials to S3:', error);
+    return false;
+  }
 }
 
 // Read current credentials from environment variables, S3, or file
 export async function getCurrentCredentials(): Promise<UserCredentials> {
-  // In serverless environments, ALWAYS use environment variables as source of truth
+  // In serverless environments, try S3 first, then fall back to environment variables
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Loading credentials from serverless environment (env vars)');
+    console.log('[INFO] Loading credentials from serverless environment');
     
-    // Use environment variables directly - they are the source of truth
+    // Try S3 first
+    const s3Credentials = await getCredentialsFromS3();
+    if (s3Credentials) {
+      return s3Credentials;
+    }
+    
+    // Fallback to environment variables
     const username = process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL || 'admin@scheduling.com';
     const password = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD_HASH || 'admin123';
     
-    console.log('[INFO] Using environment variables for credentials on AWS');
+    console.log('[INFO] Using environment variables for credentials (S3 fallback)');
     return {
       username,
       password,
@@ -108,19 +171,21 @@ export async function getCurrentCredentials(): Promise<UserCredentials> {
 
 // Update credentials
 export async function updateCredentials(username: string, password: string): Promise<boolean> {
-  // In serverless environments on AWS, credentials come from environment variables
-  // To update them, user must update Amplify environment variables
+  // In serverless environments, save to S3
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Credentials update request on AWS (env vars based)');
-    console.log('[IMPORTANT] To update credentials on AWS:');
-    console.log('  1. Go to AWS Amplify Console');
-    console.log('  2. App → Environment variables');
-    console.log('  3. Update ADMIN_USERNAME and ADMIN_PASSWORD');
-    console.log('  4. Redeploy the app');
+    console.log('[INFO] Updating credentials in serverless environment (S3)');
     
-    // For now, return false to indicate update failed
-    // The credentials cannot be updated through the UI on AWS
-    return false;
+    const newCredentials: UserCredentials = {
+      username,
+      password,
+      updatedAt: new Date().toISOString()
+    };
+    
+    const success = await saveCredentialsToS3(newCredentials);
+    if (success) {
+      console.log('[OK] Credentials updated successfully in S3');
+    }
+    return success;
   }
 
   // For local development, update the file
