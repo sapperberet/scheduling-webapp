@@ -993,7 +993,7 @@ export default function RunTab() {
                   console.error('Status polling error:', pollError);
                   // Don't stop polling on individual errors - connection might be temporary
                 }
-              }, 2000); // Poll every 2 seconds
+              }, 10000); // Poll every 10 seconds
               
               // Wait for result (timeout after 10 minutes)
               const maxWaitTime = 600000;
@@ -1033,7 +1033,7 @@ export default function RunTab() {
                   console.error('Status poll error:', e);
                   addLog(`[DEBUG] Polling error: ${e}`, 'warning');
                 }
-              }, 2000); // Poll every 2 seconds
+              }, 10000); // Poll every 10 seconds
               
               // Wait for completion (max 10 minutes)
               const maxWaitTime2 = 10 * 60 * 1000;
