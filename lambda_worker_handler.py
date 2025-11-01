@@ -239,8 +239,10 @@ def run_optimization(case_data: Dict[str, Any], run_id: str):
         store_status_to_s3(run_id, status)
         
         # Import the solver
+        logger.error("!!! ATTEMPTING TO IMPORT solver_core_real !!!")
         try:
             import solver_core_real
+            logger.error("!!! IMPORT SUCCESSFUL - solver_core_real imported !!!")
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
             logger.error(f"[ERROR] Failed to import solver_core_real - {error_msg}")

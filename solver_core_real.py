@@ -42,6 +42,10 @@ def Solve_test_case_lambda(case_file_path: str) -> Tuple[List[Dict], Dict[str, A
         tables: List of solution tables from solver
         meta: Metadata including output_dir with all generated files
     """
+    # CRITICAL: This log MUST appear if wrapper is called
+    logger.error("!!! WRAPPER FUNCTION CALLED - solver_core_real.Solve_test_case_lambda() !!!")
+    print("!!! WRAPPER FUNCTION CALLED - solver_core_real.Solve_test_case_lambda() !!!", flush=True)
+    
     logger.info(f"[SOLVER] Starting REAL optimization using testcase_gui.Solve_test_case()")
     logger.info(f"[SOLVER] Case file: {case_file_path}")
     
