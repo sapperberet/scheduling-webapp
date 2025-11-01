@@ -386,14 +386,17 @@ async def get_status(run_id: str):
         if run_data["status"] == "failed":
             response["error"] = run_data.get("error", "Unknown error")
         
+        logger.info(f"[STATUS] Returned from active_runs: {run_id}, status={run_data['status']}")
         return response
     
     # If not in memory, check S3 for status file
     # The worker Lambda stores status in S3 for cross-Lambda communication
+    logger.info(f"[STATUS] {run_id} not in active_runs, checking S3...")
     try:
         status_key = f"runs/{run_id}/status.json"
         obj = s3_client.get_object(Bucket=S3_BUCKET, Key=status_key)
         status_data = json.loads(obj['Body'].read())
+        logger.info(f"[STATUS] Read from S3: {run_id}, status={status_data.get('status')}, progress={status_data.get('progress')}")
         
         response = {
             "status": status_data.get("status", "unknown"),
@@ -411,6 +414,7 @@ async def get_status(run_id: str):
         
         return response
     except s3_client.exceptions.NoSuchKey:
+        logger.warning(f"[STATUS] Run not found in S3: {run_id}")
         raise HTTPException(status_code=404, detail="Run not found")
     except Exception as e:
         logger.error(f"[ERROR] Error getting status for {run_id}: {e}")
