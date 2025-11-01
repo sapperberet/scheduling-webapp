@@ -70,7 +70,7 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
       const data = await response.json();
       
       // For each folder, use the metadata we have from Lambda
-      const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number; file_count?: number; total_size?: number }) => {
+      const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number; file_count?: number; total_size?: number; runtime_seconds?: number }) => {
         return {
           name: folder.name || '',
           fileCount: folder.file_count || 0,
@@ -79,7 +79,7 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
           storage: 'aws_s3' as const,
           solutions: folder.solutions_count || 0,
           solver_type: folder.solver_type || 'aws_lambda',
-          execution_time: 0,
+          execution_time: (folder.runtime_seconds || 0) * 1000, // Convert seconds to milliseconds
         };
       });
       

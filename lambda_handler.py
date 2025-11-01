@@ -467,7 +467,8 @@ async def list_result_folders():
                     'solver_type': metadata.get('solver_type', 'aws_lambda'),
                     'solutions_count': metadata.get('solutions_count', 0),
                     'file_count': file_count,
-                    'total_size': total_size
+                    'total_size': total_size,
+                    'runtime_seconds': metadata.get('runtime_seconds', 0.0)
                 })
             except Exception as e:
                 logger.warning(f"[WARN] Error getting info for {folder_name}: {e}")
