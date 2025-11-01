@@ -14,6 +14,8 @@ import logging
 import os
 import tempfile
 import boto3
+import threading
+import time
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -26,6 +28,70 @@ S3_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'scheduling-solver-results')
 
 # Initialize S3 client
 s3_client = boto3.client('s3')
+
+class ProgressUpdater:
+    """Background thread that smoothly updates progress during solve"""
+    def __init__(self, run_id: str, start_progress: int, end_progress: int, duration_estimate: float = 15.0):
+        self.run_id = run_id
+        self.start_progress = start_progress
+        self.end_progress = end_progress
+        self.duration_estimate = duration_estimate
+        self.current_progress = start_progress
+        self.stop_flag = threading.Event()
+        self.thread = None
+        self.start_time = time.time()
+        
+    def start(self):
+        """Start the progress updater thread"""
+        self.thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.thread.start()
+        logger.info(f"[PROGRESS] Started updater: {self.start_progress}% -> {self.end_progress}% over ~{self.duration_estimate}s")
+        
+    def stop(self):
+        """Stop the progress updater thread"""
+        self.stop_flag.set()
+        if self.thread:
+            self.thread.join(timeout=2.0)
+        logger.info(f"[PROGRESS] Stopped updater at {self.current_progress}%")
+        
+    def _update_loop(self):
+        """Background loop that updates progress"""
+        update_interval = 2.0  # Update every 2 seconds
+        
+        while not self.stop_flag.is_set():
+            elapsed = time.time() - self.start_time
+            
+            # Calculate progress based on time elapsed
+            if elapsed >= self.duration_estimate:
+                # Cap at end_progress - 1 (don't reach 100% until solver actually finishes)
+                self.current_progress = min(self.end_progress - 1, self.start_progress + int((self.end_progress - self.start_progress) * 0.95))
+            else:
+                # Linear interpolation with slight randomness to look natural
+                progress_ratio = elapsed / self.duration_estimate
+                progress_delta = (self.end_progress - self.start_progress) * progress_ratio
+                self.current_progress = int(self.start_progress + progress_delta)
+            
+            # Update S3 status
+            try:
+                status_key = f"runs/{self.run_id}/status.json"
+                status = {
+                    "status": "running",
+                    "progress": self.current_progress,
+                    "message": f"Solving optimization... {self.current_progress}%",
+                    "started_at": datetime.utcfromtimestamp(self.start_time).isoformat()
+                }
+                s3_client.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=status_key,
+                    Body=json.dumps(status, indent=2),
+                    ContentType='application/json'
+                )
+                logger.info(f"[PROGRESS] Updated: {self.current_progress}%")
+            except Exception as e:
+                logger.warning(f"[PROGRESS] Failed to update: {e}")
+            
+            # Wait for next update or stop signal
+            self.stop_flag.wait(timeout=update_interval)
 
 def store_status_to_s3(run_id: str, status: Dict[str, Any]):
     """Store run status to S3 for cross-Lambda communication"""
@@ -185,6 +251,11 @@ def run_optimization(case_data: Dict[str, Any], run_id: str):
             status["message"] = "Running optimization solver..."
             store_status_to_s3(run_id, status)
             
+            # Start smooth progress updates from 20% to 70% during solve
+            # Estimate ~15-20 seconds for typical solve
+            progress_updater = ProgressUpdater(run_id, start_progress=20, end_progress=70, duration_estimate=18.0)
+            progress_updater.start()
+            
             # Run the REAL solver
             try:
                 tables, meta = solver_core_real.Solve_test_case_lambda(tmp_path)
@@ -193,6 +264,9 @@ def run_optimization(case_data: Dict[str, Any], run_id: str):
                 import traceback as tb
                 logger.error(f"[FULL TRACEBACK]\n{tb.format_exc()}")
                 raise
+            finally:
+                # Stop progress updater
+                progress_updater.stop()
             
             # Get the output directory
             output_dir = meta.get('output_dir', '/tmp')
