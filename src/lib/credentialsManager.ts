@@ -9,7 +9,6 @@ interface UserCredentials {
 }
 
 const CREDENTIALS_FILE = path.join(process.cwd(), '.credentials.json');
-const S3_CREDENTIALS_KEY = 'system/credentials.json';
 
 // Check if we're running in a serverless environment
 const isServerlessEnvironment = () => {
@@ -46,96 +45,35 @@ function initializeCredentials() {
 /**
  * Get credentials from S3 (for AWS/Amplify deployments)
  * Falls back to environment variables
+ * DEPRECATED: Now using environment variables directly
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getCredentialsFromS3(): Promise<UserCredentials | null> {
-  try {
-    // Dynamically import AWS SDK only when needed
-    const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-    
-    const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'scheduling-solver-results';
-    const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
-    
-    const s3Client = new S3Client({ region });
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: S3_CREDENTIALS_KEY
-    });
-    
-    const response = await s3Client.send(command);
-    const bodyContent = await response.Body?.transformToString();
-    
-    if (bodyContent) {
-      const credentials = JSON.parse(bodyContent) as UserCredentials;
-      console.log('[INFO] Loaded credentials from S3');
-      return credentials;
-    }
-  } catch (error: unknown) {
-    const err = error as { name?: string; Code?: string };
-    if (err.name === 'NoSuchKey' || err.Code === 'NoSuchKey') {
-      console.log('[INFO] Credentials not found in S3, using environment variables');
-    } else {
-      console.warn('[WARN] Error reading credentials from S3:', error);
-    }
-  }
-  
+  // No longer used - environment variables are source of truth
   return null;
 }
 
 /**
  * Save credentials to S3 (for AWS/Amplify deployments)
+ * DEPRECATED: Now using environment variables directly
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolean> {
-  try {
-    // Dynamically import AWS SDK only when needed
-    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-    
-    const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'scheduling-solver-results';
-    const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
-    
-    console.log('[DEBUG] Attempting to save credentials to S3:', {
-      bucket,
-      region,
-      key: S3_CREDENTIALS_KEY
-    });
-    
-    const s3Client = new S3Client({ region });
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: S3_CREDENTIALS_KEY,
-      Body: JSON.stringify(credentials, null, 2),
-      ContentType: 'application/json'
-    });
-    
-    await s3Client.send(command);
-    console.log('[OK] Credentials saved to S3');
-    return true;
-  } catch (error) {
-    console.error('[ERROR] Failed to save credentials to S3:', {
-      error: error instanceof Error ? error.message : String(error),
-      bucket: process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'scheduling-solver-results',
-      region: process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1'
-    });
-    return false;
-  }
+  // No longer used - environment variables are source of truth
+  return false;
 }
 
 // Read current credentials from environment variables, S3, or file
 export async function getCurrentCredentials(): Promise<UserCredentials> {
-  // In serverless environments, try S3 first, then environment variables
+  // In serverless environments, ALWAYS use environment variables as source of truth
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Loading credentials from serverless environment');
+    console.log('[INFO] Loading credentials from serverless environment (env vars)');
     
-    // Try S3 first
-    const s3Credentials = await getCredentialsFromS3();
-    if (s3Credentials) {
-      return s3Credentials;
-    }
-    
-    // Fallback to environment variables
+    // Use environment variables directly - they are the source of truth
     const username = process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL || 'admin@scheduling.com';
     const password = process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD_HASH || 'admin123';
     
-    console.log('[INFO] Using environment variables for credentials');
+    console.log('[INFO] Using environment variables for credentials on AWS');
     return {
       username,
       password,
@@ -170,32 +108,19 @@ export async function getCurrentCredentials(): Promise<UserCredentials> {
 
 // Update credentials
 export async function updateCredentials(username: string, password: string): Promise<boolean> {
-  // In serverless environments, try S3 first, then fall back to env vars
+  // In serverless environments on AWS, credentials come from environment variables
+  // To update them, user must update Amplify environment variables
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Updating credentials in serverless environment');
+    console.log('[INFO] Credentials update request on AWS (env vars based)');
+    console.log('[IMPORTANT] To update credentials on AWS:');
+    console.log('  1. Go to AWS Amplify Console');
+    console.log('  2. App → Environment variables');
+    console.log('  3. Update ADMIN_USERNAME and ADMIN_PASSWORD');
+    console.log('  4. Redeploy the app');
     
-    const newCredentials: UserCredentials = {
-      username,
-      password,
-      updatedAt: new Date().toISOString()
-    };
-    
-    // Try S3 first
-    const s3Success = await saveCredentialsToS3(newCredentials);
-    if (s3Success) {
-      console.log('[OK] Credentials updated successfully in S3');
-      return true;
-    }
-    
-    // If S3 fails, fall back to noting it in logs
-    // NOTE: On AWS Amplify without S3 IAM permissions, credentials won't persist
-    // but the update will succeed for the current session
-    console.warn('[WARN] S3 update failed - credentials will not persist across deployments');
-    console.log('[INFO] Consider adding IAM permissions for S3 or configuring environment variables');
-    
-    // Still return true to allow the session to continue with updated credentials
-    // The next login will use the original env var credentials
-    return true;
+    // For now, return false to indicate update failed
+    // The credentials cannot be updated through the UI on AWS
+    return false;
   }
 
   // For local development, update the file

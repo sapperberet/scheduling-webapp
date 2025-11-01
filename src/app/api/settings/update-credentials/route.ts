@@ -42,10 +42,22 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Update credentials (now works on both local and AWS via S3)
+    // Update credentials (now works on local only, not on AWS)
     const updateSuccess = await updateCredentials(newUsername, newPassword);
     
     if (!updateSuccess) {
+      // On AWS, credentials come from environment variables
+      if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL) {
+        return NextResponse.json(
+          { 
+            message: 'Credentials cannot be updated through this UI on AWS. To update credentials: 1) Go to AWS Amplify Console 2) Update environment variables ADMIN_USERNAME and ADMIN_PASSWORD 3) Redeploy the app',
+            environment: 'AWS',
+            requiredAction: 'Update Amplify environment variables'
+          },
+          { status: 403 }
+        );
+      }
+      
       return NextResponse.json(
         { message: 'Failed to update credentials' },
         { status: 500 }
