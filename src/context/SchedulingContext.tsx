@@ -104,10 +104,25 @@ async function saveSchedulingState(state: SchedulingState): Promise<void> {
 }
 
 // Function to load initial state with localStorage data
+// NOTE: Only use localStorage as fallback when S3 is unavailable
+// Primary data source is now S3 (loaded in page.tsx useEffect)
 function getInitialState(): SchedulingState {
   if (typeof window === 'undefined') {
     return initialState;
   }
+  
+  // Check if AWS Solver URL is configured (S3 available)
+  const hasS3 = !!process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+  
+  // If S3 is available, DON'T load from localStorage
+  // Let the S3 load in page.tsx take priority
+  if (hasS3) {
+    console.log('[INIT] S3 available - skipping localStorage, will load from S3');
+    return initialState;
+  }
+  
+  // Otherwise, use localStorage as before (S3 not configured)
+  console.log('[INIT] S3 not configured - loading from localStorage');
   
   let loadedState = { ...initialState };
   let hasLoadedSchedulingData = false;
@@ -196,11 +211,14 @@ function schedulingReducer(state: SchedulingState, action: SchedulingAction): Sc
   
   switch (action.type) {
     case 'LOAD_CASE':
-      // Only load case data if we haven't already loaded from storage
-      if (state.hasLoadedFromStorage) {
-        console.log('Ignoring LOAD_CASE because state was loaded from localStorage');
+      // Only ignore LOAD_CASE if we loaded from localStorage AND S3 is not configured
+      // If S3 is configured, always allow LOAD_CASE (S3 takes priority)
+      const hasS3 = !!process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+      if (state.hasLoadedFromStorage && !hasS3) {
+        console.log('[LOAD_CASE] Ignoring because state was loaded from localStorage and S3 not configured');
         return state;
       }
+      console.log('[LOAD_CASE] Loading case data (source: S3 or file)');
       newState = {
         ...state,
         case: action.payload,
