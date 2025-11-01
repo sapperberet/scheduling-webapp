@@ -46,8 +46,18 @@ export async function POST(request: NextRequest) {
     const updateSuccess = await updateCredentials(newUsername, newPassword);
     
     if (!updateSuccess) {
+      // Log the environment for debugging
+      console.error('[ERROR] Credential update failed - environment:', {
+        isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME,
+        isVercel: !!process.env.VERCEL,
+        nodeEnv: process.env.NODE_ENV
+      });
+      
       return NextResponse.json(
-        { message: 'Failed to update credentials - check server logs for details' },
+        { 
+          message: 'Failed to update credentials - S3 write may have failed. Check CloudWatch Logs for [ERROR] messages.',
+          hint: 'Credentials are stored in S3 on AWS. Lambda may need S3 PutObject permissions.'
+        },
         { status: 500 }
       );
     }
