@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get current credentials
-    const credentials = getCurrentCredentials();
+    const credentials = await getCurrentCredentials();
     
     return NextResponse.json(
       { 

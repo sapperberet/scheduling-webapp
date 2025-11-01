@@ -31,39 +31,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify current password with dynamic credentials
-    const currentCredentials = getCurrentCredentials();
+    const currentCredentials = await getCurrentCredentials();
     
-    // Validate using current username from credentials file, not from token
-    if (!validateCredentials(currentCredentials.username, currentPassword)) {
+    // Validate using current username from credentials, not from token
+    const isValid = await validateCredentials(currentCredentials.username, currentPassword);
+    if (!isValid) {
       return NextResponse.json(
         { message: 'Current password is incorrect' },
         { status: 400 }
       );
     }
     
-    // Check if running in serverless environment
-    const isServerless = !!(
-      process.env.VERCEL || 
-      process.env.AWS_LAMBDA_FUNCTION_NAME || 
-      process.env.LAMBDA_TASK_ROOT ||
-      process.env.AWS_EXECUTION_ENV ||
-      process.env.NODE_ENV === 'production'
-    );
-
-    if (isServerless) {
-      // In serverless, cannot update - return error with guidance
-      return NextResponse.json(
-        { 
-          message: 'Running on serverless (AWS Lambda). Credentials cannot be updated at runtime. Update environment variables instead: ADMIN_USERNAME, ADMIN_PASSWORD, CREDENTIALS_UPDATED_AT',
-          isServerless: true,
-          guidance: 'Set environment variables in AWS Lambda console or deployment configuration'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Update credentials using credentials manager (local only)
-    const updateSuccess = updateCredentials(newUsername, newPassword);
+    // Update credentials (now works on both local and AWS via S3)
+    const updateSuccess = await updateCredentials(newUsername, newPassword);
     
     if (!updateSuccess) {
       return NextResponse.json(
@@ -72,17 +52,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log the update (no emails are sent)
-    console.log('[INFO] Credentials updated (email notifications disabled):', {
+    // Log the update
+    console.log('[INFO] Credentials updated successfully:', {
       oldUsername: currentCredentials.username,
       newUsername: newUsername,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      location: process.env.AWS_LAMBDA_FUNCTION_NAME ? 'AWS S3' : 'Local file'
     });
 
     return NextResponse.json(
       { 
-        message: 'Credentials updated successfully. Email notifications have been disabled by configuration.',
-        timestamp: new Date().toISOString()
+        message: 'Credentials updated successfully. You will be automatically logged out.',
+        timestamp: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
       { status: 200 }
     );
