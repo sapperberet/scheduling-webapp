@@ -280,15 +280,30 @@ def lambda_handler(event, context):
     logger.info(f"[SQS] Received event: {json.dumps(event)}")
     
     try:
+        # Handle direct SQS event vs test event
+        records = event.get('Records', [])
+        if not records:
+            logger.warning(f"[WARN] No Records in event, raw event: {json.dumps(event)}")
+            return {
+                'statusCode': 200,
+                'body': json.dumps('No records to process')
+            }
+        
         # Process SQS records
-        for record in event.get('Records', []):
+        for record in records:
             try:
-                body = json.loads(record['Body'])
+                # SQS records have 'body' key (lowercase)
+                if 'body' not in record and 'Body' not in record:
+                    logger.error(f"[ERROR] Record has no body: {json.dumps(record)}")
+                    continue
+                
+                body_str = record.get('body') or record.get('Body')
+                body = json.loads(body_str)
                 run_id = body.get('run_id')
                 case_data = body.get('case_data')
                 
                 if not run_id or not case_data:
-                    logger.error(f"[ERROR] Missing run_id or case_data in message")
+                    logger.error(f"[ERROR] Missing run_id or case_data in message: {json.dumps(body)}")
                     continue
                 
                 logger.info(f"[SQS] Processing run {run_id}")
@@ -296,6 +311,7 @@ def lambda_handler(event, context):
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[ERROR] Failed to parse SQS message: {e}")
+                logger.error(f"[ERROR] Record content: {json.dumps(record)}")
                 continue
             except Exception as e:
                 logger.error(f"[ERROR] Failed to process SQS record: {e}")
