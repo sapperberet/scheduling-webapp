@@ -1,5 +1,5 @@
 FROM public.ecr.aws/lambda/python:3.11
-# Cache invalidation: 2025-11-01-force-rebuild-solver-fixes
+# Cache invalidation: 2025-11-01-final-fix-remove-interfering-file
 RUN yum install -y gcc gcc-c++ make && yum clean all
 WORKDIR /build
 COPY requirements-solver.txt .
@@ -7,5 +7,4 @@ RUN pip install --no-cache-dir -r requirements-solver.txt -t /opt/python/lib/pyt
 COPY lambda_worker_handler.py /var/task/lambda_worker_handler.py
 COPY solver_core_real.py /var/task/solver_core_real.py
 COPY testcase_gui.py /var/task/testcase_gui.py
-COPY AWS_LAMBDA_UPDATED_CODE.py /var/task/aws_lambda_updated_code.py
 CMD ["lambda_worker_handler.lambda_handler"]
