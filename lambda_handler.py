@@ -369,29 +369,9 @@ async def solve(case: SchedulingCase):
 async def get_status(run_id: str):
     """Get optimization status and progress"""
     
-    # First check in-memory cache
-    if run_id in active_runs:
-        run_data = active_runs[run_id]
-        response = {
-            "status": run_data["status"],
-            "message": run_data["message"],
-            "run_id": run_id,
-            "progress": run_data.get("progress", 0)
-        }
-        
-        if run_data["status"] == "completed":
-            response["results"] = run_data.get("result")
-            response["output_directory"] = run_data.get("output_directory")
-        
-        if run_data["status"] == "failed":
-            response["error"] = run_data.get("error", "Unknown error")
-        
-        logger.info(f"[STATUS] Returned from active_runs: {run_id}, status={run_data['status']}")
-        return response
-    
-    # If not in memory, check S3 for status file
-    # The worker Lambda stores status in S3 for cross-Lambda communication
-    logger.info(f"[STATUS] {run_id} not in active_runs, checking S3...")
+    # ALWAYS check S3 first for async jobs (Worker Lambda updates S3)
+    # Fall back to in-memory cache only if S3 doesn't have the status
+    logger.info(f"[STATUS] Checking S3 for run: {run_id}")
     try:
         status_key = f"runs/{run_id}/status.json"
         obj = s3_client.get_object(Bucket=S3_BUCKET, Key=status_key)
@@ -414,8 +394,29 @@ async def get_status(run_id: str):
         
         return response
     except s3_client.exceptions.NoSuchKey:
-        logger.warning(f"[STATUS] Run not found in S3: {run_id}")
-        raise HTTPException(status_code=404, detail="Run not found")
+        # Not in S3 yet, check in-memory cache (for jobs just queued)
+        logger.info(f"[STATUS] Not in S3, checking active_runs for {run_id}")
+        if run_id in active_runs:
+            run_data = active_runs[run_id]
+            response = {
+                "status": run_data["status"],
+                "message": run_data["message"],
+                "run_id": run_id,
+                "progress": run_data.get("progress", 0)
+            }
+            
+            if run_data["status"] == "completed":
+                response["results"] = run_data.get("result")
+                response["output_directory"] = run_data.get("output_directory")
+            
+            if run_data["status"] == "failed":
+                response["error"] = run_data.get("error", "Unknown error")
+            
+            logger.info(f"[STATUS] Returned from active_runs: {run_id}, status={run_data['status']}")
+            return response
+        else:
+            logger.warning(f"[STATUS] Run not found: {run_id}")
+            raise HTTPException(status_code=404, detail="Run not found")
     except Exception as e:
         logger.error(f"[ERROR] Error getting status for {run_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
