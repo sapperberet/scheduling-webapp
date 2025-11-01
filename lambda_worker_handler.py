@@ -155,9 +155,13 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str, r
             logger.info(f"[S3] Scanning output directory: {output_dir}")
             logger.info(f"[S3] Files found: {os.listdir(output_dir)}")
             
-            for file_name in os.listdir(output_dir):
-                file_path = os.path.join(output_dir, file_name)
-                if os.path.isfile(file_path):
+            # Walk through directory recursively to handle Result_1/, Result_2/, etc.
+            for root, dirs, files in os.walk(output_dir):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    # Get relative path to preserve directory structure
+                    rel_path = os.path.relpath(file_path, output_dir)
+                    
                     try:
                         with open(file_path, 'rb') as f:
                             file_content = f.read()
@@ -176,17 +180,18 @@ def upload_results_to_s3(run_id: str, result: Dict[str, Any], output_dir: str, r
                         else:
                             content_type = 'application/octet-stream'
                         
-                        s3_key = f"{folder_name}/{file_name}"
+                        # Preserve directory structure in S3 key
+                        s3_key = f"{folder_name}/{rel_path.replace(os.sep, '/')}"
                         s3_client.put_object(
                             Bucket=S3_BUCKET,
                             Key=s3_key,
                             Body=file_content,
                             ContentType=content_type
                         )
-                        logger.info(f"[S3] Uploaded {file_name} ({len(file_content)} bytes) to {s3_key}")
+                        logger.info(f"[S3] Uploaded {rel_path} ({len(file_content)} bytes) to {s3_key}")
                         uploaded_files += 1
                     except Exception as e:
-                        logger.warning(f"[WARN] Failed to upload {file_name}: {e}")
+                        logger.warning(f"[WARN] Failed to upload {rel_path}: {e}")
         else:
             logger.warning(f"[WARN] Output directory not found or not a directory: {output_dir}")
         
