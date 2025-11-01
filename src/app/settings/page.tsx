@@ -34,8 +34,9 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState('');
   const [showWarning, setShowWarning] = useState(false);
   const [currentUsername, setCurrentUsername] = useState('');
+  const [deploymentInfo, setDeploymentInfo] = useState<{ isServerless: boolean; message?: string } | null>(null);
 
-  // Authentication check - show minimal UI ASAP and fetch credentials in background
+  // Authentication check - show minimal UI ASAP without background fetches
   useEffect(() => {
     if (status === 'loading') return;
 
@@ -44,38 +45,13 @@ export default function SettingsPage() {
       return;
     }
 
-    // If session already contains a displayable username/email, show it immediately
-    const displayName = session.user?.name || session.user?.email || '';
-    if (displayName) {
-      setCurrentUsername(displayName);
-    }
+    // Show current username from session immediately
+    const displayName = session.user?.name || session.user?.email || 'admin';
+    setCurrentUsername(displayName);
 
-    // End the skeleton as soon as auth is validated so the UI becomes interactive quickly.
+    // End the skeleton as soon as auth is validated - do NOT fetch in background
+    // This prevents the 20-second delay
     setPageLoading(false);
-
-    // Fetch current credentials in the background to update backup email / username if needed.
-    const fetchCurrentCredentials = async () => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000); // fail fast after 5s
-      try {
-        const response = await fetch('/api/settings/current-credentials', { signal: controller.signal });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.username) setCurrentUsername(data.username);
-        }
-      } catch (error: unknown) {
-        // Narrow the unknown error to an object with an optional name property
-        if (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError') {
-          console.warn('current-credentials fetch aborted due to timeout');
-        } else {
-          console.error('Failed to fetch current credentials:', error);
-        }
-      } finally {
-        clearTimeout(timeout);
-      }
-    };
-
-    void fetchCurrentCredentials();
   }, [session, status, router]);
 
   const validateForm = () => {
@@ -141,21 +117,32 @@ export default function SettingsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to update credentials');
+        // Check if failure is due to serverless environment
+        if (response.status === 400 && data.message?.includes('serverless')) {
+          setDeploymentInfo({ isServerless: true, message: data.message });
+          setError('Running on AWS/serverless - update environment variables instead');
+        } else {
+          throw new Error(data.message || 'Failed to update credentials');
+        }
+      } else if (data.message?.includes('serverless')) {
+        // Success but alert user they're on serverless
+        setDeploymentInfo({ isServerless: true, message: data.message });
+        setSuccess('Local credentials updated, but use environment variables on AWS');
+      } else {
+        setSuccess(data.message || 'Credentials updated successfully.');
       }
-
-      setSuccess(data.message || 'Credentials updated successfully.');
       
-  // Clear form
+      // Clear form
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       
-      
       // Auto logout after 5 seconds (extended for dual emails)
-      setTimeout(() => {
-        signOut({ callbackUrl: '/login' });
-      }, 5000);
+      if (response.ok && !data.message?.includes('serverless')) {
+        setTimeout(() => {
+          signOut({ callbackUrl: '/login' });
+        }, 5000);
+      }
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An error occurred while updating credentials';
@@ -234,6 +221,21 @@ export default function SettingsPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* AWS Deployment Notice */}
+            {deploymentInfo?.isServerless && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                <h4 className="font-semibold text-amber-900 dark:text-amber-300 mb-2">AWS/Serverless Deployment</h4>
+                <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+                  Your app is running on AWS Lambda. To update credentials, you must set the following environment variables in your AWS deployment:
+                </p>
+                <ul className="text-xs text-amber-800 dark:text-amber-200 space-y-1 font-mono bg-white/50 dark:bg-black/20 p-3 rounded">
+                  <li>• <strong>ADMIN_USERNAME</strong>: Your new username</li>
+                  <li>• <strong>ADMIN_PASSWORD</strong>: Your new password</li>
+                  <li>• <strong>CREDENTIALS_UPDATED_AT</strong>: ISO timestamp</li>
+                </ul>
+              </div>
+            )}
+
             {/* Current Username Display */}
             {currentUsername && (
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">

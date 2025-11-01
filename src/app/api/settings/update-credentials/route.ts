@@ -41,7 +41,28 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Update credentials using credentials manager
+    // Check if running in serverless environment
+    const isServerless = !!(
+      process.env.VERCEL || 
+      process.env.AWS_LAMBDA_FUNCTION_NAME || 
+      process.env.LAMBDA_TASK_ROOT ||
+      process.env.AWS_EXECUTION_ENV ||
+      process.env.NODE_ENV === 'production'
+    );
+
+    if (isServerless) {
+      // In serverless, cannot update - return error with guidance
+      return NextResponse.json(
+        { 
+          message: 'Running on serverless (AWS Lambda). Credentials cannot be updated at runtime. Update environment variables instead: ADMIN_USERNAME, ADMIN_PASSWORD, CREDENTIALS_UPDATED_AT',
+          isServerless: true,
+          guidance: 'Set environment variables in AWS Lambda console or deployment configuration'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Update credentials using credentials manager (local only)
     const updateSuccess = updateCredentials(newUsername, newPassword);
     
     if (!updateSuccess) {

@@ -92,8 +92,26 @@ export default function Home() {
   const handleExportConfiguration = async () => {
     setIsDownloading(prev => ({ ...prev, config: true }));
     try {
-      const configToExport = state.lastResults?.caseSnapshot ?? state.case;
-      exportCurrentCaseToExcel(configToExport);
+      // First try to fetch the last configuration from S3
+      const response = await fetch('/api/export/last-config');
+      
+      if (response.ok) {
+        const data = await response.json();
+        const configToExport = data.case;
+        
+        // Export the fetched config from S3
+        exportCurrentCaseToExcel(configToExport);
+        console.log(`Exported configuration from S3 folder: ${data.folder}`);
+      } else {
+        // Fallback to current state if S3 fetch fails
+        console.warn('Could not fetch from S3, using current state');
+        const configToExport = state.lastResults?.caseSnapshot ?? state.case;
+        if (configToExport) {
+          exportCurrentCaseToExcel(configToExport);
+        } else {
+          dispatch({ type: 'SET_ERROR', payload: 'No configuration available to export. Please run an optimization first.' });
+        }
+      }
     } catch (error) {
         console.error("Failed to export configuration:", error);
         dispatch({ type: 'SET_ERROR', payload: 'Failed to export configuration.' });
