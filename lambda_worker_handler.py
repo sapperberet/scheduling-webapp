@@ -255,7 +255,8 @@ def run_optimization(case_data: Dict[str, Any], run_id: str):
             "progress": 100,
             "message": "Optimization completed successfully",
             "output_directory": folder_name,
-            "completed_at": datetime.utcnow().isoformat()
+            "completed_at": datetime.utcnow().isoformat(),
+            "result": result  # Include full result for API to return
         })
         store_status_to_s3(run_id, status)
         
