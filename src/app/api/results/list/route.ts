@@ -17,15 +17,16 @@ export async function GET(request: NextRequest) {
 
   try {
     // Use AWS SDK directly to list S3 folders
+    // Use S3_ prefixed env vars as primary (Amplify compatible), AWS_ as fallback
     const s3Client = new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
+      region: process.env.NEXT_PUBLIC_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        accessKeyId: process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
       },
     });
 
-    const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
+    const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
 
     // List all Result_N folders
     const response = await s3Client.send(
