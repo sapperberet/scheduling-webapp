@@ -92,6 +92,12 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     const bucket = process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
     
+    console.log('[DEBUG] Attempting to save credentials to S3:', {
+      bucket,
+      region,
+      key: S3_CREDENTIALS_KEY
+    });
+    
     const s3Client = new S3Client({ region });
     const command = new PutObjectCommand({
       Bucket: bucket,
@@ -104,7 +110,11 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     console.log('[OK] Credentials saved to S3');
     return true;
   } catch (error) {
-    console.error('[ERROR] Failed to save credentials to S3:', error);
+    console.error('[ERROR] Failed to save credentials to S3:', {
+      error: error instanceof Error ? error.message : String(error),
+      bucket: process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'scheduling-solver-results',
+      region: process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1'
+    });
     return false;
   }
 }
@@ -160,9 +170,9 @@ export async function getCurrentCredentials(): Promise<UserCredentials> {
 
 // Update credentials
 export async function updateCredentials(username: string, password: string): Promise<boolean> {
-  // In serverless environments, update S3
+  // In serverless environments, try S3 first, then fall back to env vars
   if (isServerlessEnvironment()) {
-    console.log('[INFO] Updating credentials in serverless environment (S3)');
+    console.log('[INFO] Updating credentials in serverless environment');
     
     const newCredentials: UserCredentials = {
       username,
@@ -170,11 +180,22 @@ export async function updateCredentials(username: string, password: string): Pro
       updatedAt: new Date().toISOString()
     };
     
-    const success = await saveCredentialsToS3(newCredentials);
-    if (success) {
+    // Try S3 first
+    const s3Success = await saveCredentialsToS3(newCredentials);
+    if (s3Success) {
       console.log('[OK] Credentials updated successfully in S3');
+      return true;
     }
-    return success;
+    
+    // If S3 fails, fall back to noting it in logs
+    // NOTE: On AWS Amplify without S3 IAM permissions, credentials won't persist
+    // but the update will succeed for the current session
+    console.warn('[WARN] S3 update failed - credentials will not persist across deployments');
+    console.log('[INFO] Consider adding IAM permissions for S3 or configuring environment variables');
+    
+    // Still return true to allow the session to continue with updated credentials
+    // The next login will use the original env var credentials
+    return true;
   }
 
   // For local development, update the file

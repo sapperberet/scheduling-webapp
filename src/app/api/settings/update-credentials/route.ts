@@ -70,9 +70,13 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-  console.error('[ERROR] Error updating credentials:', error);
+  console.error('[ERROR] Error updating credentials:', {
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    timestamp: new Date().toISOString()
+  });
     return NextResponse.json(
-      { message: 'Internal server error' },
+      { message: 'Internal server error', error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
