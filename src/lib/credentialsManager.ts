@@ -53,16 +53,13 @@ async function getCredentialsFromS3(): Promise<UserCredentials | null> {
     const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.AWS_REGION || 'us-east-1';
     
-    // On AWS Lambda/Amplify, use IAM role (no explicit credentials needed)
-    // On local, use explicit credentials from env vars
+    // Always use explicit credentials (same pattern as results API)
     const s3Client = new S3Client({
       region,
-      ...(process.env.AWS_ACCESS_KEY_ID ? {
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-        }
-      } : {})
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      }
     });
     
     const command = new GetObjectCommand({
@@ -109,18 +106,15 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
     const bucket = process.env.AWS_S3_BUCKET || 'scheduling-solver-results';
     const region = process.env.AWS_REGION || 'us-east-1';
     
-    console.log('[DEBUG] Creating S3 client with IAM role (no explicit credentials)');
+    console.log('[DEBUG] Creating S3 client with explicit credentials (same pattern as results API)');
     
-    // On AWS Lambda/Amplify, use IAM role (no explicit credentials needed)
-    // On local, use explicit credentials from env vars
+    // Always use explicit credentials (same pattern as results API)
     const s3Client = new S3Client({
       region,
-      ...(process.env.AWS_ACCESS_KEY_ID ? {
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-        }
-      } : {})
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+      }
     });
     
     console.log('[DEBUG] S3 Client created, preparing PutObjectCommand');
