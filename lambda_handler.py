@@ -435,6 +435,11 @@ async def list_result_folders():
         for prefix in response.get('CommonPrefixes', []):
             folder_name = prefix['Prefix'].rstrip('/')
             
+            # FILTER: Only include result_* folders, exclude runs/ and other system folders
+            if not folder_name.startswith('result_'):
+                logger.info(f"[SKIP] Excluding non-result folder: {folder_name}")
+                continue
+            
             try:
                 # Get metadata
                 metadata_key = f"{folder_name}/metadata.json"
