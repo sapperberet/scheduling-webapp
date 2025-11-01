@@ -92,6 +92,7 @@ async function getCredentialsFromS3(): Promise<UserCredentials | null> {
 
 /**
  * Save credentials to S3 (for AWS/Amplify deployments)
+ * Returns true on success, throws error on failure (instead of returning false)
  */
 async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolean> {
   try {
@@ -153,7 +154,8 @@ async function saveCredentialsToS3(credentials: UserCredentials): Promise<boolea
       statusCode: (error as {$metadata?: {httpStatusCode?: number}})?.$metadata?.httpStatusCode,
       stack: error instanceof Error ? error.stack : undefined
     });
-    return false;
+    // Re-throw the error so it can be caught by the API route
+    throw error;
   }
 }
 
@@ -219,14 +221,10 @@ export async function updateCredentials(username: string, password: string): Pro
       updatedAt: new Date().toISOString()
     };
     
-    const success = await saveCredentialsToS3(newCredentials);
-    if (success) {
-      console.log('[OK] Credentials updated successfully in S3');
-      return true;
-    } else {
-      console.error('[ERROR] Failed to save credentials to S3');
-      return false;
-    }
+    // This will now throw an error if S3 save fails, instead of returning false
+    await saveCredentialsToS3(newCredentials);
+    console.log('[OK] Credentials updated successfully in S3');
+    return true;
   }
 
   // For local development, update the file
@@ -242,7 +240,7 @@ export async function updateCredentials(username: string, password: string): Pro
     return true;
   } catch (error) {
     console.error('[ERROR] Error updating credentials:', error);
-    return false;
+    throw error; // Re-throw so API can handle it
   }
 }
 
