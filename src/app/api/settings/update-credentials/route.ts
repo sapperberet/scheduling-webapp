@@ -73,10 +73,15 @@ export async function POST(request: NextRequest) {
   console.error('[ERROR] Error updating credentials:', {
     error: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    errorType: error instanceof Error ? error.constructor.name : typeof error
   });
     return NextResponse.json(
-      { message: 'Internal server error', error: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        message: 'Internal server error', 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error)
+      },
       { status: 500 }
     );
   }
