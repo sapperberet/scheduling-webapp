@@ -1,5 +1,5 @@
 FROM public.ecr.aws/lambda/python:3.11
-# Cache invalidation: 2025-11-01-async-queue-api-handler
+# Cache invalidation: 2025-11-02-testcase-gui-minimize-fix
 RUN yum install -y gcc gcc-c++ make && yum clean all
 WORKDIR /build
 COPY requirements-solver.txt .
