@@ -1259,11 +1259,17 @@ export default function RunTab() {
   };
 
   const stopSolver = () => {
-    // For serverless approach, we just reset the UI state
+    // Stop button now refreshes the page (which stops the solver)
+    // This matches what the user discovered: refreshing stops the AWS Lambda job
+    addLog('[WARN] Stopping solver and refreshing page...', 'warning');
     setIsRunning(false);
     setSolverState('ready');
     setProgress(0);
-  addLog('[WARN] Optimization stopped by user', 'warning');
+    
+    // Refresh page after a brief delay to show the log message
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
   };
 
   const handleExportLatestSchedule = async () => {
