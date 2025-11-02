@@ -34,12 +34,17 @@ S3_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'scheduling-solver-results')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 SQS_QUEUE_URL = os.environ.get('SQS_QUEUE_URL')
 
-if not SQS_QUEUE_URL:
-    raise ValueError("SQS_QUEUE_URL environment variable is required")
+# Single run mode: process one job and exit (triggered by Lambda)
+SINGLE_RUN_MODE = os.environ.get('SINGLE_RUN_MODE', 'false').lower() == 'true'
+RUN_ID = os.environ.get('RUN_ID')  # Only used in single-run mode
+
+if not SINGLE_RUN_MODE and not SQS_QUEUE_URL:
+    raise ValueError("SQS_QUEUE_URL required for polling mode (or set SINGLE_RUN_MODE=true)")
 
 # Initialize AWS clients
 s3_client = boto3.client('s3', region_name=AWS_REGION)
-sqs_client = boto3.client('sqs', region_name=AWS_REGION)
+if not SINGLE_RUN_MODE:
+    sqs_client = boto3.client('sqs', region_name=AWS_REGION)
 
 # Import the real solver
 try:
@@ -399,4 +404,37 @@ def poll_sqs_forever():
 
 
 if __name__ == "__main__":
-    poll_sqs_forever()
+    if SINGLE_RUN_MODE:
+        # Single run mode: process one job from S3 and exit
+        logger.info("=" * 80)
+        logger.info("ECS FARGATE WORKER STARTED - SINGLE RUN MODE")
+        logger.info(f"Run ID: {RUN_ID}")
+        logger.info(f"S3 Bucket: {S3_BUCKET}")
+        logger.info("=" * 80)
+        
+        if not RUN_ID:
+            logger.error("RUN_ID environment variable required in single-run mode")
+            exit(1)
+        
+        try:
+            # Retrieve job data from S3
+            job_key = f"jobs/{RUN_ID}/input.json"
+            logger.info(f"Retrieving job data from s3://{S3_BUCKET}/{job_key}")
+            
+            response = s3_client.get_object(Bucket=S3_BUCKET, Key=job_key)
+            job_data = json.loads(response['Body'].read())
+            
+            logger.info(f"Processing job {RUN_ID}")
+            
+            # Process the solver job
+            process_solver_job(job_data)
+            
+            logger.info("✅ Job completed successfully - exiting")
+            exit(0)
+        
+        except Exception as e:
+            logger.error(f"❌ Job failed: {e}", exc_info=True)
+            exit(1)
+    else:
+        # Polling mode: continuously poll SQS (old behavior)
+        poll_sqs_forever()
