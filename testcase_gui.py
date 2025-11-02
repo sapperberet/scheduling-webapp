@@ -1137,25 +1137,42 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             model.Add(cluster_cubesums[i] == 0)
     # ---------------------------------------------------------------------------
 
-    # 12 hrs apart - TEMPORARILY DISABLED FOR TESTING
-    # This constraint was causing infeasibility - need to debug logic
-    # for iter1 in S:
-    #     for iter2 in S:
-    #         if(shifts[iter1]["id"] == shifts[iter2]["id"]): continue
-    #         s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
-    #         s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
-    #         e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-    #         e2 = dt.datetime.fromisoformat(shifts[iter2]["end"])
-    #         
-    #         if(s1 > s2): continue
-    #         bad = 0
-    #         if(s2 <= e1): bad = 1
-    #
-    #         diff = abs(dt.datetime.fromisoformat(shifts[iter2]["start"]) - dt.datetime.fromisoformat(shifts[iter1]["end"]))
-    #         if(bad or diff.total_seconds() < 12 * 60 * 60): 
-    #             for j in P:
-    #                 model.AddAtMostOne([x[iter1, j], x[iter2, j]])
-    logger.info("12-hour constraint disabled - testing feasibility")
+    # 12 hrs apart - SOFT CONSTRAINT (penalty) instead of hard constraint
+    # Convert from hard AddAtMostOne to soft penalty in objective
+    # This allows solutions to violate the 12-hour rule but penalizes it
+    min_rest_hours = 12
+    rest_violations = []
+    
+    for iter1 in S:
+        for iter2 in S:
+            if shifts[iter1]["id"] == shifts[iter2]["id"]: 
+                continue
+            s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
+            s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
+            e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
+            
+            if s1 > s2: 
+                continue
+            
+            diff_seconds = abs((s2 - e1).total_seconds())
+            diff_hours = diff_seconds / 3600.0
+            
+            # Only check if shifts are somewhat close (within 24 hours)
+            if diff_hours < 24:
+                # Create a binary variable: 1 if both shifts assigned to same provider
+                both_assigned = model.NewBoolVar(f"both_assigned_{iter1}_{iter2}")
+                for j in P:
+                    # both_assigned = 1 if x[iter1,j]=1 AND x[iter2,j]=1
+                    model.Add(both_assigned >= x[iter1, j] + x[iter2, j] - 1)
+                
+                # If diff_hours < 12, penalize in objective
+                if diff_hours < min_rest_hours:
+                    rest_violations.append(both_assigned)
+    
+    if rest_violations:
+        logger.info("Created %d rest violation penalties (soft constraint)", len(rest_violations))
+    else:
+        logger.info("No close shifts found for rest violation penalties")
     
     # cant because type
     for s in S:
@@ -1234,12 +1251,15 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     c_slack_consec = int(get_num(consts, 'weights', 'hard', 'slack_consec', default=1))
 
     U = model.NewIntVar(0, 10**18, "U")
+    # Add rest_violations penalty to objective (soft constraint: penalty = 100 per violation)
+    rest_penalty = sum(rest_violations) * 100 if rest_violations else 0
     model.Add(U == c_slack_unfilled * sum(slack_unfilled) 
               + c_slack_shift_less * sum(slack_shift_less) 
               + c_slack_shift_more * sum(slack_shift_more) 
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
-              + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
+              + c_slack_cant_work * sum(slack_hard_on)
+              + rest_penalty)  # Add soft 12-hour rest penalty
     model.Minimize(U)
 
     # Phase-1 solve (hard slacks) — VERBOSE + callback into logger
