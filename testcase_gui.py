@@ -1238,7 +1238,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
-    model.minimize(U)
+    model.Minimize(U)
 
     # Phase-1 solve (hard slacks) ÔÇö VERBOSE + callback into logger
     solver = cp_model.CpSolver()
@@ -1446,7 +1446,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
                             c_soft_on * sum(soft_on_i) + 
                             c_soft_off * sum(soft_off_i))
     print(count_horrible)
-    model.minimize(Weighted)
+    model.Minimize(Weighted)
     # (Phase-2 solver is created in solve_two_phase)
     return dict(
         model=model,
