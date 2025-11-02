@@ -1246,7 +1246,12 @@ export default function RunTab() {
               }
             } else if (awsResult.status === 'queued' || awsResult.status === 'processing') {
               // Async response - job queued, poll for status
+              // SAVE TO LOCALSTORAGE IMMEDIATELY so we can resume after refresh
+              localStorage.setItem('aws_solver_run_id', awsResult.run_id);
+              localStorage.setItem('aws_solver_start_time', Date.now().toString());
+              
               addLog(`[INFO] Job queued: ${awsResult.run_id}. Polling for status...`, 'info');
+              addLog(`[INFO] Job ID: ${awsResult.run_id} (persisted - safe to refresh)`, 'info');
               
               // Clear any existing polling timer
               if (pollingTimerRef.current) {
@@ -1269,6 +1274,9 @@ export default function RunTab() {
                         clearTimeout(pollingTimerRef.current);
                         pollingTimerRef.current = null;
                       }
+                      // Clear from localStorage
+                      localStorage.removeItem('aws_solver_run_id');
+                      localStorage.removeItem('aws_solver_start_time');
                       result = statusData;
                       setProgress(100);
                     } else {
