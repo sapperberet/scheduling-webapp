@@ -188,8 +188,15 @@ jobs:
     - name: Create ECS cluster if not exists
       continue-on-error: true
       run: |
-        aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }} || \
-        aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }}
+        # Check if cluster exists by looking for failures in response
+        CLUSTER_CHECK=$(aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }} --query "failures" --output json)
+        
+        if [ "$CLUSTER_CHECK" != "[]" ] && [ "$CLUSTER_CHECK" != "null" ]; then
+          echo "Cluster doesn't exist, creating..."
+          aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }}
+        else
+          echo "Cluster already exists"
+        fi
 
     - name: Deploy Amazon ECS task definition
       run: |
