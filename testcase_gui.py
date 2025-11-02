@@ -1240,9 +1240,17 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
     model.Minimize(U)
 
-    # Phase-1 solve (hard slacks) ÔÇö VERBOSE + callback into logger
+    # Phase-1 solve (hard slacks) — VERBOSE + callback into logger
+    # For large cases (>100 shifts), reduce time spent on Phase 1 to leave time for Phase 2
+    # For smaller cases, use more time to find a good starting point
+    num_shifts = len(S)
+    if num_shifts > 100:
+        phase1_time = 30.0  # Reduced for large cases, let Phase 2 have more time
+    else:
+        phase1_time = 60.0  # Standard for small/medium cases
+    
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = float(120)
+    solver.parameters.max_time_in_seconds = float(phase1_time)
     solver.parameters.num_search_workers = 8
     solver.parameters.log_search_progress = True
     solver.parameters.log_to_stdout = False
@@ -1250,7 +1258,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         solver.log_callback = lambda line: logging.getLogger("scheduler").info("[phase1] %s", line.rstrip())
     except Exception:
         pass
-    logger.info("Phase-1 solve: time=%ss workers=%s", solver.parameters.max_time_in_seconds, solver.parameters.num_search_workers)
+    logger.info("Phase-1 solve: time=%ss workers=%s (case_size=%d)", solver.parameters.max_time_in_seconds, solver.parameters.num_search_workers, num_shifts)
 
     st1 = solver.Solve(model)
     obj1 = solver.ObjectiveValue() if st1 in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None
@@ -1608,8 +1616,9 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
 
     total_time = float(get_num(consts, 'solver', 'max_time_in_seconds', default=120))
     frac = float(get_num(consts, 'solver', 'phase1_fraction', default=0.4))
-    t1 = max(5.0, total_time * frac)
-    t2 = max(5.0, total_time - t1)
+    # For big cases, ensure Phase 2 gets enough time. Minimum 10s each, cap phase1 at 60% max
+    t1 = min(total_time * 0.6, max(10.0, total_time * frac))
+    t2 = max(20.0, total_time - t1)  # Give Phase 2 at least 20s for solution collection
     logger.info("Time budget total=%.2fs split: phase1=%.2fs phase2=%.2fs", total_time, t1, t2)
 
     # Phase-2 directly on ctx['model'] with soft objective (existing pipeline)
@@ -1622,10 +1631,15 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         try: solver2.parameters.num_search_workers=int(sp['num_threads'])
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
-    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', 0.01))
+    # For big cases (>100 shifts), use relaxed gap to allow solutions to be found
+    case_size = len(ctx2.get('shifts', []))
+    default_gap = 0.5 if case_size > 100 else 0.01  # 50% gap for big cases, 1% for small
+    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', default_gap))
     except: pass
     solver2.parameters.log_search_progress = True
     solver2.parameters.log_to_stdout = False    # Capture solver progress into unified log
+    # Optimize for solution finding: use more diverse search strategies
+    solver2.parameters.use_absl_random = True
     try:
         solver2.log_callback = lambda line: logging.getLogger("scheduler").info("[phase2] %s", line.rstrip())
     except Exception:
