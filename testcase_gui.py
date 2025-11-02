@@ -1910,6 +1910,9 @@ def compute_capacity_diag(case: Dict[str,Any]) -> List[Dict[str,Any]]:
 def Solve_test_case(case):
     # Pre-init timestamp so logs & files share the same run id
     ts=dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # Save case path for diagnosis later (before it gets reassigned to dict)
+    case_path = case
 
     # Lightweight run config probe (to derive out_dir for logger)
     try:
@@ -1999,7 +2002,7 @@ def Solve_test_case(case):
     if hosp_path and os.path.exists(hosp_path):
         try:
             logger.info("Running diagnosis on schedule: %s", hosp_path)
-            run_diag(case, hosp_path)
+            run_diag(case_path, hosp_path)
         except Exception as e:
             logger.error("Diagnosis failed: %s", str(e))
     
