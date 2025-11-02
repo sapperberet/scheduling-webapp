@@ -5,7 +5,7 @@
       "assignments": [
         {
           "shift_id": "S3MD@2025-10-07",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-07",
           "shift_type": "S3MD",
           "start_time": "2025-10-07T22:00:00",
@@ -13,7 +13,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-08",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-08",
           "shift_type": "S3MD",
           "start_time": "2025-10-08T22:00:00",
@@ -21,7 +21,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-09",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-09",
           "shift_type": "S3MD",
           "start_time": "2025-10-09T22:00:00",
@@ -69,7 +69,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-15",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-15",
           "shift_type": "S3MD",
           "start_time": "2025-10-15T22:00:00",
@@ -77,7 +77,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-16",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-16",
           "shift_type": "S3MD",
           "start_time": "2025-10-16T22:00:00",
@@ -85,7 +85,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-17",
-          "provider_name": "Matt Noble",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-17",
           "shift_type": "S3MD",
           "start_time": "2025-10-17T22:00:00",
@@ -93,7 +93,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-18",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-18",
           "shift_type": "S3MD",
           "start_time": "2025-10-18T22:00:00",
@@ -101,7 +101,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-19",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-19",
           "shift_type": "S3MD",
           "start_time": "2025-10-19T22:00:00",
@@ -298,7 +298,7 @@
       "assignments": [
         {
           "shift_id": "S3MD@2025-10-07",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-07",
           "shift_type": "S3MD",
           "start_time": "2025-10-07T22:00:00",
@@ -306,7 +306,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-08",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-08",
           "shift_type": "S3MD",
           "start_time": "2025-10-08T22:00:00",
@@ -314,7 +314,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-09",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-09",
           "shift_type": "S3MD",
           "start_time": "2025-10-09T22:00:00",
@@ -354,7 +354,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-14",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Noble",
           "date": "2025-10-14",
           "shift_type": "S3MD",
           "start_time": "2025-10-14T22:00:00",
@@ -362,7 +362,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-15",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-15",
           "shift_type": "S3MD",
           "start_time": "2025-10-15T22:00:00",
@@ -370,7 +370,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-16",
-          "provider_name": "Matt Noble",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-16",
           "shift_type": "S3MD",
           "start_time": "2025-10-16T22:00:00",
@@ -378,7 +378,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-17",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-17",
           "shift_type": "S3MD",
           "start_time": "2025-10-17T22:00:00",
@@ -386,7 +386,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-18",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-18",
           "shift_type": "S3MD",
           "start_time": "2025-10-18T22:00:00",
@@ -394,7 +394,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-19",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-19",
           "shift_type": "S3MD",
           "start_time": "2025-10-19T22:00:00",
@@ -426,7 +426,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-23",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-23",
           "shift_type": "S3MD",
           "start_time": "2025-10-23T22:00:00",
@@ -434,7 +434,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-24",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-24",
           "shift_type": "S3MD",
           "start_time": "2025-10-24T22:00:00",
@@ -474,7 +474,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-29",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-29",
           "shift_type": "S3MD",
           "start_time": "2025-10-29T22:00:00",
@@ -498,7 +498,7 @@
         },
         {
           "shift_id": "S4MD",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-01",
           "shift_type": "S4MD",
           "start_time": "2025-10-01T13:00:00",
@@ -522,7 +522,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-24",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-24",
           "shift_type": "S4MD",
           "start_time": "2025-10-24T13:00:00",
@@ -530,7 +530,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-25",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-25",
           "shift_type": "S4MD",
           "start_time": "2025-10-25T13:00:00",
@@ -578,7 +578,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-31",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-31",
           "shift_type": "S4MD",
           "start_time": "2025-10-31T13:00:00",
@@ -591,7 +591,7 @@
       "assignments": [
         {
           "shift_id": "S3MD@2025-10-07",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-07",
           "shift_type": "S3MD",
           "start_time": "2025-10-07T22:00:00",
@@ -623,7 +623,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-11",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-11",
           "shift_type": "S3MD",
           "start_time": "2025-10-11T22:00:00",
@@ -631,7 +631,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-12",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-12",
           "shift_type": "S3MD",
           "start_time": "2025-10-12T22:00:00",
@@ -639,7 +639,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-13",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-13",
           "shift_type": "S3MD",
           "start_time": "2025-10-13T22:00:00",
@@ -647,7 +647,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-14",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-14",
           "shift_type": "S3MD",
           "start_time": "2025-10-14T22:00:00",
@@ -655,7 +655,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-15",
-          "provider_name": "Matt Noble",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-15",
           "shift_type": "S3MD",
           "start_time": "2025-10-15T22:00:00",
@@ -663,7 +663,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-16",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-16",
           "shift_type": "S3MD",
           "start_time": "2025-10-16T22:00:00",
@@ -671,7 +671,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-17",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-17",
           "shift_type": "S3MD",
           "start_time": "2025-10-17T22:00:00",
@@ -687,7 +687,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-19",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-19",
           "shift_type": "S3MD",
           "start_time": "2025-10-19T22:00:00",
@@ -719,7 +719,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-23",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-23",
           "shift_type": "S3MD",
           "start_time": "2025-10-23T22:00:00",
@@ -727,7 +727,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-24",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-24",
           "shift_type": "S3MD",
           "start_time": "2025-10-24T22:00:00",
@@ -735,7 +735,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-25",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-25",
           "shift_type": "S3MD",
           "start_time": "2025-10-25T22:00:00",
@@ -743,7 +743,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-26",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-26",
           "shift_type": "S3MD",
           "start_time": "2025-10-26T22:00:00",
@@ -751,7 +751,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-27",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-27",
           "shift_type": "S3MD",
           "start_time": "2025-10-27T22:00:00",
@@ -759,7 +759,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-28",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-28",
           "shift_type": "S3MD",
           "start_time": "2025-10-28T22:00:00",
@@ -767,7 +767,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-29",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-29",
           "shift_type": "S3MD",
           "start_time": "2025-10-29T22:00:00",
@@ -775,7 +775,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-30",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-30",
           "shift_type": "S3MD",
           "start_time": "2025-10-30T22:00:00",
@@ -783,7 +783,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-31",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-31",
           "shift_type": "S3MD",
           "start_time": "2025-10-31T22:00:00",
@@ -815,7 +815,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-24",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-24",
           "shift_type": "S4MD",
           "start_time": "2025-10-24T13:00:00",
@@ -823,7 +823,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-25",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-25",
           "shift_type": "S4MD",
           "start_time": "2025-10-25T13:00:00",
@@ -831,7 +831,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-26",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-26",
           "shift_type": "S4MD",
           "start_time": "2025-10-26T13:00:00",
@@ -839,7 +839,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-27",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-27",
           "shift_type": "S4MD",
           "start_time": "2025-10-27T13:00:00",
@@ -847,7 +847,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-28",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-28",
           "shift_type": "S4MD",
           "start_time": "2025-10-28T13:00:00",
@@ -855,7 +855,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-29",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-29",
           "shift_type": "S4MD",
           "start_time": "2025-10-29T13:00:00",
@@ -863,7 +863,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-30",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-30",
           "shift_type": "S4MD",
           "start_time": "2025-10-30T13:00:00",
@@ -871,7 +871,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-31",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-31",
           "shift_type": "S4MD",
           "start_time": "2025-10-31T13:00:00",
@@ -884,7 +884,7 @@
       "assignments": [
         {
           "shift_id": "S3MD@2025-10-07",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-07",
           "shift_type": "S3MD",
           "start_time": "2025-10-07T22:00:00",
@@ -892,7 +892,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-08",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-08",
           "shift_type": "S3MD",
           "start_time": "2025-10-08T22:00:00",
@@ -900,7 +900,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-09",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-09",
           "shift_type": "S3MD",
           "start_time": "2025-10-09T22:00:00",
@@ -908,7 +908,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-10",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-10",
           "shift_type": "S3MD",
           "start_time": "2025-10-10T22:00:00",
@@ -932,7 +932,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-13",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-13",
           "shift_type": "S3MD",
           "start_time": "2025-10-13T22:00:00",
@@ -948,7 +948,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-15",
-          "provider_name": "Matt Noble",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-15",
           "shift_type": "S3MD",
           "start_time": "2025-10-15T22:00:00",
@@ -956,7 +956,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-16",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Basinger",
           "date": "2025-10-16",
           "shift_type": "S3MD",
           "start_time": "2025-10-16T22:00:00",
@@ -964,7 +964,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-17",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Matt Noble",
           "date": "2025-10-17",
           "shift_type": "S3MD",
           "start_time": "2025-10-17T22:00:00",
@@ -972,7 +972,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-18",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Matt Noble",
           "date": "2025-10-18",
           "shift_type": "S3MD",
           "start_time": "2025-10-18T22:00:00",
@@ -980,7 +980,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-19",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-19",
           "shift_type": "S3MD",
           "start_time": "2025-10-19T22:00:00",
@@ -1012,7 +1012,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-23",
-          "provider_name": "Matt Basinger",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-23",
           "shift_type": "S3MD",
           "start_time": "2025-10-23T22:00:00",
@@ -1020,7 +1020,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-24",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-24",
           "shift_type": "S3MD",
           "start_time": "2025-10-24T22:00:00",
@@ -1036,7 +1036,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-26",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-26",
           "shift_type": "S3MD",
           "start_time": "2025-10-26T22:00:00",
@@ -1060,7 +1060,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-29",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-29",
           "shift_type": "S3MD",
           "start_time": "2025-10-29T22:00:00",
@@ -1068,7 +1068,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-30",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-30",
           "shift_type": "S3MD",
           "start_time": "2025-10-30T22:00:00",
@@ -1076,7 +1076,7 @@
         },
         {
           "shift_id": "S3MD@2025-10-31",
-          "provider_name": "Tanner Muggli",
+          "provider_name": "Murray McLachlan",
           "date": "2025-10-31",
           "shift_type": "S3MD",
           "start_time": "2025-10-31T22:00:00",
@@ -1108,7 +1108,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-24",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-24",
           "shift_type": "S4MD",
           "start_time": "2025-10-24T13:00:00",
@@ -1116,7 +1116,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-25",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-25",
           "shift_type": "S4MD",
           "start_time": "2025-10-25T13:00:00",
@@ -1124,7 +1124,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-26",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Isaac Siegfried",
           "date": "2025-10-26",
           "shift_type": "S4MD",
           "start_time": "2025-10-26T13:00:00",
@@ -1148,7 +1148,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-29",
-          "provider_name": "Isaac Siegfried",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-29",
           "shift_type": "S4MD",
           "start_time": "2025-10-29T13:00:00",
@@ -1156,7 +1156,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-30",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-30",
           "shift_type": "S4MD",
           "start_time": "2025-10-30T13:00:00",
@@ -1164,7 +1164,7 @@
         },
         {
           "shift_id": "S4MD@2025-10-31",
-          "provider_name": "Murray McLachlan",
+          "provider_name": "Tanner Muggli",
           "date": "2025-10-31",
           "shift_type": "S4MD",
           "start_time": "2025-10-31T13:00:00",
@@ -1177,42 +1177,42 @@
   "solver_stats": {
     "status": 4,
     "status_name": "OPTIMAL",
-    "response": "CpSolverResponse summary:\nstatus: OPTIMAL\nobjective: 91123220\nbest_bound: 91123220\nintegers: 1027\nbooleans: 905\nconflicts: 0\nbranches: 1810\npropagations: 28764\ninteger_propagations: 36045\nrestarts: 1810\nlp_iterations: 0\nwalltime: 11.4724\nusertime: 11.4724\ndeterministic_time: 4.15565\ngap_integral: 21.0378\nsolution_fingerprint: 0x921628c8154a6e26\n",
-    "solutions_collected": 29,
+    "response": "CpSolverResponse summary:\nstatus: OPTIMAL\nobjective: 81004900\nbest_bound: 81004900\nintegers: 1027\nbooleans: 905\nconflicts: 0\nbranches: 1260\npropagations: 18350\ninteger_propagations: 22633\nrestarts: 1260\nlp_iterations: 0\nwalltime: 7.92604\nusertime: 7.92604\ndeterministic_time: 3.4979\ngap_integral: 23.3023\nsolution_fingerprint: 0x38fa60657c25f2b7\n",
+    "solutions_collected": 11,
     "solutions_selected": 4,
-    "best_objective": 91123220.0,
-    "best_bound": 91123220.0,
+    "best_objective": 81004900.0,
+    "best_bound": 81004900.0,
     "per_table": [
       {
-        "objective": 91123220.0,
-        "best_bound": 91023280.0,
+        "objective": 81004900.0,
+        "best_bound": 80920720.0,
         "conflicts": 0,
-        "branches": 1810,
-        "wall_time_s": 3.701235811,
+        "branches": 1260,
+        "wall_time_s": 3.0879265,
         "assignments": 36
       },
       {
-        "objective": 91388600.0,
-        "best_bound": 91017910.0,
-        "conflicts": 862,
-        "branches": 7961,
-        "wall_time_s": 2.045074849,
+        "objective": 162156620.0,
+        "best_bound": 80840030.0,
+        "conflicts": 349,
+        "branches": 2890,
+        "wall_time_s": 0.5921602970000001,
         "assignments": 36
       },
       {
-        "objective": 91797640.0,
-        "best_bound": 90987100.0,
-        "conflicts": 1235,
-        "branches": 3908,
-        "wall_time_s": 1.6064307480000002,
+        "objective": 101410100.0,
+        "best_bound": 80840030.0,
+        "conflicts": 88,
+        "branches": 2228,
+        "wall_time_s": 0.6279196250000001,
         "assignments": 36
       },
       {
-        "objective": 91548180.0,
-        "best_bound": 90987100.0,
-        "conflicts": 0,
-        "branches": 1810,
-        "wall_time_s": 1.8693939640000001,
+        "objective": 101310280.0,
+        "best_bound": 80840030.0,
+        "conflicts": 311,
+        "branches": 3786,
+        "wall_time_s": 0.811890124,
         "assignments": 36
       }
     ],
