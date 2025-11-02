@@ -1238,7 +1238,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
-    model.minimize(U)
+    model.Minimize(U)
 
     # Phase-1 solve (hard slacks) ÔÇö VERBOSE + callback into logger
     solver = cp_model.CpSolver()
@@ -1446,7 +1446,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
                             c_soft_on * sum(soft_on_i) + 
                             c_soft_off * sum(soft_off_i))
     print(count_horrible)
-    model.minimize(Weighted)
+    model.Minimize(Weighted)
     # (Phase-2 solver is created in solve_two_phase)
     return dict(
         model=model,
@@ -3185,7 +3185,9 @@ class TestcaseGUI:
 
     # ---------- Tools: Random Perturbation ----------
     def menu_perturb_case(self):
-        dlg = PerturbDialog(self.root, title="Randomly Perturb Case")
+        _ensure_tkinter_imported()  # Ensure tkinter available
+        PerturbDialog_cls = _create_perturb_dialog_class()
+        dlg = PerturbDialog_cls(self.root, title="Randomly Perturb Case")
         if not getattr(dlg, "result", None):
             return
         r = dlg.result
@@ -3432,37 +3434,47 @@ class TestcaseGUI:
         self._log(msg, warn=True)
 
 # ---------- Perturb dialog ----------
-class PerturbDialog(simpledialog.Dialog):
-    def body(self, master):
-        ttk.Label(master, text="Percent of providers to change (5–100)").grid(row=0, column=0, sticky="w")
-        self.var_p_prov = tk.IntVar(value=25)
-        self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
-        self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
+# Defer PerturbDialog class definition until tkinter is imported
+PerturbDialog = None
 
-        ttk.Label(master, text="Percent of shifts to change (5–100)").grid(row=1, column=0, sticky="w")
-        self.var_p_shift = tk.IntVar(value=25)
-        self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
-        self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
+def _create_perturb_dialog_class():
+    """Create PerturbDialog class only when tkinter is available"""
+    global PerturbDialog
+    if PerturbDialog is None:
+        class PerturbDialog_impl(simpledialog.Dialog):
+            def body(self, master):
+                ttk.Label(master, text="Percent of providers to change (5ÔÇô100)").grid(row=0, column=0, sticky="w")
+                self.var_p_prov = tk.IntVar(value=25)
+                self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
+                self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
 
-        ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
-        self.entry_seed = ttk.Entry(master, width=16)
-        self.entry_seed.grid(row=2, column=1, sticky="w")
+                ttk.Label(master, text="Percent of shifts to change (5ÔÇô100)").grid(row=1, column=0, sticky="w")
+                self.var_p_shift = tk.IntVar(value=25)
+                self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
+                self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
 
-        self.var_tweak_weekend = tk.BooleanVar(value=True)
-        ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
-            .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
+                ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
+                self.entry_seed = ttk.Entry(master, width=16)
+                self.entry_seed.grid(row=2, column=1, sticky="w")
 
-        master.grid_columnconfigure(1, weight=1)
-        return self.entry_seed
+                self.var_tweak_weekend = tk.BooleanVar(value=True)
+                ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
+                    .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
 
-    def apply(self):
-        seed_text = self.entry_seed.get().strip()
-        self.result = {
-            "pct_providers": max(5, min(100, self.var_p_prov.get())),
-            "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
-            "seed":          None if seed_text == "" else seed_text,
-            "tweak_weekend": self.var_tweak_weekend.get(),
-        }
+                master.grid_columnconfigure(1, weight=1)
+                return self.entry_seed
+
+            def apply(self):
+                seed_text = self.entry_seed.get().strip()
+                self.result = {
+                    "pct_providers": max(5, min(100, self.var_p_prov.get())),
+                    "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
+                    "seed":          None if seed_text == "" else seed_text,
+                    "tweak_weekend": self.var_tweak_weekend.get(),
+                }
+        
+        PerturbDialog = PerturbDialog_impl
+    return PerturbDialog
 
 # ---------- solver-child entry (no Tk) ----------
 def _solver_child_main(argv):
