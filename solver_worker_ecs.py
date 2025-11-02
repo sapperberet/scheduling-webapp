@@ -18,6 +18,7 @@ import shutil
 import tempfile
 import boto3
 import time
+import threading
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -46,6 +47,103 @@ try:
 except ImportError:
     logger.error("Could not import solver_core_real - solver will fail")
     solver_core_real = None
+
+
+class SmoothProgressTracker:
+    """Updates progress smoothly throughout long-running solve"""
+    def __init__(self, run_id: str, estimated_duration_seconds: float = 7200.0):
+        self.run_id = run_id
+        self.estimated_duration = estimated_duration_seconds  # 2 hours default
+        self.start_time = time.time()
+        self.stop_flag = threading.Event()
+        self.thread = None
+        self.last_progress = 0
+        
+    def start(self):
+        """Start background progress updates"""
+        self.thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.thread.start()
+        logger.info(f"Started smooth progress tracker (estimated {self.estimated_duration}s)")
+        
+    def stop(self):
+        """Stop progress updates"""
+        self.stop_flag.set()
+        if self.thread:
+            self.thread.join(timeout=2.0)
+            
+    def _update_loop(self):
+        """Background loop that smoothly updates progress"""
+        while not self.stop_flag.is_set():
+            elapsed = time.time() - self.start_time
+            
+            # Smooth logarithmic progress curve (fast at start, slows toward 100%)
+            # Never reaches 100% - solver completion will set that
+            if elapsed < 60:
+                # First minute: 0% -> 20%
+                progress = int(20 * (elapsed / 60))
+            elif elapsed < 300:
+                # Minutes 1-5: 20% -> 50%
+                progress = 20 + int(30 * ((elapsed - 60) / 240))
+            elif elapsed < 1800:
+                # Minutes 5-30: 50% -> 75%
+                progress = 50 + int(25 * ((elapsed - 300) / 1500))
+            elif elapsed < 3600:
+                # Minutes 30-60: 75% -> 85%
+                progress = 75 + int(10 * ((elapsed - 1800) / 1800))
+            elif elapsed < 7200:
+                # Hours 1-2: 85% -> 92%
+                progress = 85 + int(7 * ((elapsed - 3600) / 3600))
+            else:
+                # After 2 hours: 92% -> 95% (very slow)
+                progress = 92 + int(3 * min(1.0, (elapsed - 7200) / 3600))
+            
+            # Ensure progress only moves forward
+            progress = max(progress, self.last_progress)
+            progress = min(progress, 95)  # Cap at 95% until solver finishes
+            
+            if progress > self.last_progress:
+                self._update_status(progress)
+                self.last_progress = progress
+            
+            time.sleep(10)  # Update every 10 seconds
+            
+    def _update_status(self, progress: int):
+        """Update status in S3"""
+        try:
+            status_key = f"runs/{self.run_id}/status.json"
+            elapsed = int(time.time() - self.start_time)
+            
+            # Progress messages
+            if progress < 20:
+                message = "Initializing solver..."
+            elif progress < 50:
+                message = "Finding feasible solution..."
+            elif progress < 75:
+                message = "Optimizing solution quality..."
+            elif progress < 85:
+                message = "Exploring solution space..."
+            elif progress < 92:
+                message = "Fine-tuning assignments..."
+            else:
+                message = "Finalizing optimal solution..."
+            
+            s3_client.put_object(
+                Bucket=S3_BUCKET,
+                Key=status_key,
+                Body=json.dumps({
+                    'run_id': self.run_id,
+                    'status': 'running',
+                    'progress': progress,
+                    'message': f"{message} {progress}%",
+                    'elapsed_seconds': elapsed,
+                    'updated_at': datetime.utcnow().isoformat()
+                }, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Progress: {progress}% - {message} ({elapsed}s elapsed)")
+        except Exception as e:
+            logger.error(f"Failed to update progress: {e}")
+
 
 
 def get_next_result_number() -> int:
@@ -166,20 +264,30 @@ def process_solver_job(message_body: Dict[str, Any]):
     logger.info(f"STARTING SOLVER JOB: {run_id}")
     logger.info(f"=" * 80)
     
+    progress_tracker = None
     try:
         # Update status: running
         update_job_status(run_id, 'running', {'progress': 0, 'message': 'Solver started'})
+        
+        # Estimate duration from case constants (default 2 hours)
+        constants = case_data.get('constants', {})
+        solver_config = constants.get('solver', {})
+        estimated_duration = float(solver_config.get('max_time_in_seconds', 7200))
+        
+        # Start smooth progress tracker for long-running solve
+        progress_tracker = SmoothProgressTracker(run_id, estimated_duration)
+        progress_tracker.start()
         
         # Create temp directory for solver output
         with tempfile.TemporaryDirectory() as temp_dir:
             logger.info(f"Temporary directory: {temp_dir}")
             
             # Run the solver - THIS CAN TAKE HOURS!
-            logger.info("Starting solver...")
+            logger.info(f"Starting solver (estimated {estimated_duration}s)...")
             start_time = time.time()
             
             result = solver_core_real.solve_case(
-                constants=case_data.get('constants', {}),
+                constants=constants,
                 calendar=case_data.get('calendar', {}),
                 shifts=case_data.get('shifts', []),
                 providers=case_data.get('providers', []),
@@ -189,6 +297,10 @@ def process_solver_job(message_body: Dict[str, Any]):
             
             elapsed = time.time() - start_time
             logger.info(f"Solver completed in {elapsed:.2f}s")
+            
+            # Stop progress tracker
+            if progress_tracker:
+                progress_tracker.stop()
             
             # Upload results to S3
             metadata = {
@@ -213,6 +325,11 @@ def process_solver_job(message_body: Dict[str, Any]):
             
     except Exception as e:
         logger.error(f"Job failed: {run_id}", exc_info=True)
+        
+        # Stop progress tracker on error
+        if progress_tracker:
+            progress_tracker.stop()
+            
         update_job_status(run_id, 'failed', {
             'error': str(e),
             'message': f'Solver error: {str(e)}'
