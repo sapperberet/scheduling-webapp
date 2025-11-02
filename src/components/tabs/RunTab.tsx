@@ -114,6 +114,7 @@ export default function RunTab() {
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
   const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasResumedRef = useRef(false); // Track if we've already tried to resume
   
   // Sync state to localStorage whenever it changes (task-oriented persistence)
   useEffect(() => {
@@ -497,6 +498,10 @@ export default function RunTab() {
 
   // Resume polling for any active AWS job after page refresh
   useEffect(() => {
+    // Only try once per component mount
+    if (hasResumedRef.current) return;
+    hasResumedRef.current = true;
+    
     const savedRunId = localStorage.getItem('aws_solver_run_id');
     const savedStartTime = localStorage.getItem('aws_solver_start_time');
     
@@ -514,13 +519,6 @@ export default function RunTab() {
       localStorage.removeItem('solver-running');
       localStorage.removeItem('solver-state');
       addLog('[INFO] Previous job expired (older than 12 hours)', 'info');
-      return;
-    }
-    
-    // Check if there's actually a job to resume (look at localStorage, not timer ref)
-    // If timer is running, we're already polling - don't restart
-    if (pollingTimerRef.current && isRunning) {
-      // Already actively polling, don't restart
       return;
     }
     
@@ -605,7 +603,7 @@ export default function RunTab() {
         pollingTimerRef.current = null;
       }
     };
-  }, [addLog, isRunning]); // Run when addLog is ready OR when isRunning changes
+  }, [addLog]); // Only depend on addLog, not isRunning
 
   // Handle visibility changes (e.g., returning to browser tab or app)
   useEffect(() => {
@@ -629,6 +627,7 @@ export default function RunTab() {
       if (pollingTimerRef.current) return;
       
       // Otherwise, restart polling by triggering auto-resume
+      console.log('🔄 Page became visible - resuming polling for job:', savedRunId);
       addLog('🔄 Page became visible - resuming polling...', 'info');
       setIsRunning(true);
       setSolverState('running');
