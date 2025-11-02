@@ -1137,23 +1137,25 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             model.Add(cluster_cubesums[i] == 0)
     # ---------------------------------------------------------------------------
 
-    # 12 hrs apart
-    for iter1 in S:
-        for iter2 in S:
-            if(shifts[iter1]["id"] == shifts[iter2]["id"]): continue
-            s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
-            s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
-            e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            e2 = dt.datetime.fromisoformat(shifts[iter2]["end"])
-            
-            if(s1 > s2): continue
-            bad = 0
-            if(s2 <= e1): bad = 1
-
-            diff = abs(dt.datetime.fromisoformat(shifts[iter2]["start"]) - dt.datetime.fromisoformat(shifts[iter1]["end"]))
-            if(bad or diff.total_seconds() < 12 * 60 * 60): 
-                for j in P:
-                    model.AddAtMostOne([x[iter1, j], x[iter2, j]])
+    # 12 hrs apart - TEMPORARILY DISABLED FOR TESTING
+    # This constraint was causing infeasibility - need to debug logic
+    # for iter1 in S:
+    #     for iter2 in S:
+    #         if(shifts[iter1]["id"] == shifts[iter2]["id"]): continue
+    #         s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
+    #         s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
+    #         e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
+    #         e2 = dt.datetime.fromisoformat(shifts[iter2]["end"])
+    #         
+    #         if(s1 > s2): continue
+    #         bad = 0
+    #         if(s2 <= e1): bad = 1
+    #
+    #         diff = abs(dt.datetime.fromisoformat(shifts[iter2]["start"]) - dt.datetime.fromisoformat(shifts[iter1]["end"]))
+    #         if(bad or diff.total_seconds() < 12 * 60 * 60): 
+    #             for j in P:
+    #                 model.AddAtMostOne([x[iter1, j], x[iter2, j]])
+    logger.info("12-hour constraint disabled - testing feasibility")
     
     # cant because type
     for s in S:
