@@ -505,14 +505,22 @@ export default function RunTab() {
     const savedRunId = localStorage.getItem('aws_solver_run_id');
     const savedStartTime = localStorage.getItem('aws_solver_start_time');
     
-    if (!savedRunId || !savedStartTime) return;
+    console.log('🔍 Checking for saved job:', { savedRunId, savedStartTime });
+    
+    if (!savedRunId || !savedStartTime) {
+      console.log('✗ No saved job found');
+      return;
+    }
     
     const startTime = parseInt(savedStartTime, 10);
     const elapsed = Date.now() - startTime;
     const maxRunTime = 12 * 60 * 60 * 1000; // 12 HOURS
     
+    console.log('⏱️ Job age:', Math.round(elapsed / 60000), 'minutes');
+    
     // Only resume if job started less than 12 hours ago
     if (elapsed >= maxRunTime) {
+      console.log('✗ Job too old, clearing');
       // Job too old, clear it
       localStorage.removeItem('aws_solver_run_id');
       localStorage.removeItem('aws_solver_start_time');
@@ -521,6 +529,8 @@ export default function RunTab() {
       addLog('[INFO] Previous job expired (older than 12 hours)', 'info');
       return;
     }
+    
+    console.log('✓ Resuming job:', savedRunId);
     
     // Add separator and resume message
     addLog('═══════════════════════════════════════════════════', 'info');
@@ -537,13 +547,17 @@ export default function RunTab() {
       try {
         const AWS_SOLVER_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
         if (!AWS_SOLVER_URL) {
+          console.error('AWS URL not configured');
           addLog('[ERROR] AWS Solver URL not configured', 'error');
           return;
         }
         
+        console.log('📡 Polling AWS for status:', `${AWS_SOLVER_URL}/status/${savedRunId}`);
+        
         const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${savedRunId}`);
         if (statusResponse.ok) {
           const status = await statusResponse.json();
+          console.log('📊 Status received:', status);
           
           if (status.status === 'completed') {
             addLog('[SUCCESS] Job completed while you were away!', 'success');
@@ -578,6 +592,7 @@ export default function RunTab() {
             pollingTimerRef.current = setTimeout(resumePolling, 10000); // Poll every 10s
           }
         } else {
+          console.error('Status response not ok:', statusResponse.status);
           addLog('[WARN] Could not check job status - job may have completed', 'warning');
           localStorage.removeItem('aws_solver_run_id');
           localStorage.removeItem('aws_solver_start_time');
@@ -589,8 +604,8 @@ export default function RunTab() {
           }
         }
       } catch (error) {
-        addLog(`[ERROR] Failed to resume polling: ${error}`, 'error');
         console.error('Resume polling error:', error);
+        addLog(`[ERROR] Failed to resume polling: ${error}`, 'error');
       }
     };
     
@@ -603,7 +618,7 @@ export default function RunTab() {
         pollingTimerRef.current = null;
       }
     };
-  }, [addLog]); // Only depend on addLog, not isRunning
+  }, [addLog]); // Depend on addLog to ensure it's available
 
   // Handle visibility changes (e.g., returning to browser tab or app)
   useEffect(() => {
