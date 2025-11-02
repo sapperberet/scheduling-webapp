@@ -3487,15 +3487,16 @@ def _solver_child_main(argv):
         sys.exit(2)
 
     # Run the solver (this sets up logging redirection inside the child)
-    Solve_test_case(case_path)
-    global CHOSPITAL
-
-
-
-
-    print(case_path, CHOSPITAL)
-
-    run_diag(case_path, CHOSPITAL)
+    tables, meta = Solve_test_case(case_path)
+    
+    # Determine hospital schedule path from meta
+    hosp_path = meta.get('run', {}).get('files', {}).get('hospital')
+    
+    if hosp_path and os.path.exists(hosp_path):
+        print(f"[solver-child] Running diagnosis on: {hosp_path}")
+        run_diag(case_path, hosp_path)
+    else:
+        print(f"[solver-child] Hospital schedule not found: {hosp_path}")
 
 # ---------- main ----------
 def main():
