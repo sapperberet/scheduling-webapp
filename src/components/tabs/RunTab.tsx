@@ -113,6 +113,8 @@ export default function RunTab() {
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+  const [resumeRunId, setResumeRunId] = useState('');
   
   // Sync state to localStorage whenever it changes (task-oriented persistence)
   useEffect(() => {
@@ -1336,19 +1338,98 @@ export default function RunTab() {
 
   const stopSolver = () => {
     // Stop button behavior for serverless AWS Lambda:
-    // - Cannot actually stop a running Lambda job (it's already queued on AWS)
-    // - Just reset UI to "ready" state
+    // - Cannot actually stop a running Lambda/ECS job (it's already running on AWS)
+    // - Stop local polling and reset UI to "ready" state
+    // - Clear localStorage so it doesn't resume on refresh
     // - The solver continues running in background on AWS
-    // - User can close browser and come back later to check results
-    // - Results will be available in S3 when Lambda completes
+    // - User can manually check S3 for results later
     
-    addLog('[INFO] Solver polling stopped - AWS Lambda job continues in background', 'info');
-    addLog('[INFO] You can close this browser and come back later to check results', 'info');
-    addLog('[INFO] Results will be saved to S3 when optimization completes', 'info');
+    addLog('[INFO] 🛑 Stopping local polling - AWS job continues in background', 'info');
+    addLog('[INFO] You can close this browser. Results will be saved to S3 when complete.', 'info');
+    addLog('[INFO] To resume tracking this job, you\'ll need to manually check S3 results.', 'info');
+    
+    // Clear all localStorage tracking
+    localStorage.removeItem('aws_solver_run_id');
+    localStorage.removeItem('aws_solver_start_time');
+    localStorage.removeItem('solver-running');
+    localStorage.removeItem('solver-state');
     
     setIsRunning(false);
     setSolverState('ready');
     setProgress(0);
+  };
+
+  const handleResumeJob = async () => {
+    if (!resumeRunId.trim()) {
+      addLog('[ERROR] Please enter a valid Run ID', 'error');
+      return;
+    }
+
+    const runIdToResume = resumeRunId.trim();
+    addLog('═══════════════════════════════════════════════════', 'info');
+    addLog(`🔄 Manually resuming job: ${runIdToResume}`, 'info');
+    addLog('Checking job status...', 'info');
+    addLog('═══════════════════════════════════════════════════', 'info');
+
+    // Save to localStorage for auto-resume on refresh
+    localStorage.setItem('aws_solver_run_id', runIdToResume);
+    localStorage.setItem('aws_solver_start_time', Date.now().toString());
+
+    setIsRunning(true);
+    setSolverState('running');
+    setShowResumeDialog(false);
+    setResumeRunId('');
+
+    // Start polling
+    const pollResumedJob = async () => {
+      try {
+        const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_AWS_SOLVER_URL}/status/${runIdToResume}`);
+        if (statusResponse.ok) {
+          const status = await statusResponse.json();
+
+          if (status.status === 'completed') {
+            addLog('[SUCCESS] Job already completed!', 'success');
+            setProgress(100);
+            localStorage.removeItem('aws_solver_run_id');
+            localStorage.removeItem('aws_solver_start_time');
+            setIsRunning(false);
+            setSolverState('finished');
+            
+            // Show results if available
+            if (status.results) {
+              setAwsResult(status);
+            }
+          } else if (status.status === 'failed' || status.status === 'error') {
+            addLog(`[ERROR] Job failed: ${status.error || 'Unknown error'}`, 'error');
+            localStorage.removeItem('aws_solver_run_id');
+            localStorage.removeItem('aws_solver_start_time');
+            setIsRunning(false);
+            setSolverState('error');
+          } else {
+            // Still running
+            if (status.progress !== undefined) {
+              setProgress(status.progress);
+              if (status.message) {
+                addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
+              }
+            }
+            setTimeout(pollResumedJob, 10000); // Continue polling
+          }
+        } else {
+          addLog('[ERROR] Could not fetch job status - job may not exist', 'error');
+          localStorage.removeItem('aws_solver_run_id');
+          localStorage.removeItem('aws_solver_start_time');
+          setIsRunning(false);
+          setSolverState('ready');
+        }
+      } catch (error) {
+        addLog(`[ERROR] Failed to resume job: ${error}`, 'error');
+        setIsRunning(false);
+        setSolverState('error');
+      }
+    };
+
+    pollResumedJob();
   };
 
   const handleExportLatestSchedule = async () => {
@@ -2601,7 +2682,19 @@ export default function RunTab() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-red-300/20 to-red-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               <IoStopSharp className="w-5 h-5 relative z-10" />
-              <span className="relative z-10">Stop</span>
+              <span className="relative z-10">Stop Tracking</span>
+            </button>
+          )}
+
+          {/* Resume Job Button - only show when not running */}
+          {!isRunning && (
+            <button
+              onClick={() => setShowResumeDialog(true)}
+              className="relative px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-300/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <IoSync className="w-5 h-5 relative z-10" />
+              <span className="relative z-10">Resume Job</span>
             </button>
           )}
           
@@ -2781,6 +2874,56 @@ export default function RunTab() {
           </div>
         </div>
       </div>
+
+      {/* Resume Job Dialog */}
+      {showResumeDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 w-full max-w-md mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center space-x-2">
+                  <IoSync className="w-6 h-6 text-blue-500" />
+                  <span>Resume Job</span>
+                </h3>
+                <button
+                  onClick={() => { setShowResumeDialog(false); setResumeRunId(''); }}
+                  className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                Enter the Run ID of a job you want to resume tracking. You can find the Run ID in the logs when you start a job.
+              </p>
+
+              <input
+                type="text"
+                value={resumeRunId}
+                onChange={(e) => setResumeRunId(e.target.value)}
+                placeholder="e.g., ecbee92f-ee2b-470f-a7d4-bb5cb9128f7c"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all mb-4"
+              />
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => { setShowResumeDialog(false); setResumeRunId(''); }}
+                  className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResumeJob}
+                  disabled={!resumeRunId.trim()}
+                  className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Resume
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Local Solver Installation Guide Modal */}
       <LocalSolverGuideModal
