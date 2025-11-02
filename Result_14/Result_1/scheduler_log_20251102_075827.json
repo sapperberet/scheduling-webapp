@@ -1,0 +1,101 @@
+{
+  "phase1": {
+    "status": 4,
+    "status_name": "OPTIMAL",
+    "response": "CpSolverResponse summary:\nstatus: OPTIMAL\nobjective: 91123220\nbest_bound: 91123220\nintegers: 1027\nbooleans: 905\nconflicts: 0\nbranches: 1810\npropagations: 28764\ninteger_propagations: 36045\nrestarts: 1810\nlp_iterations: 0\nwalltime: 11.4724\nusertime: 11.4724\ndeterministic_time: 4.15565\ngap_integral: 21.0378\nsolution_fingerprint: 0x921628c8154a6e26\n",
+    "solutions_collected": 29,
+    "solutions_selected": 4,
+    "best_objective": 91123220.0,
+    "best_bound": 91123220.0,
+    "per_table": [
+      {
+        "objective": 91123220.0,
+        "best_bound": 91023280.0,
+        "conflicts": 0,
+        "branches": 1810,
+        "wall_time_s": 3.701235811,
+        "assignments": 36
+      },
+      {
+        "objective": 91388600.0,
+        "best_bound": 91017910.0,
+        "conflicts": 862,
+        "branches": 7961,
+        "wall_time_s": 2.045074849,
+        "assignments": 36
+      },
+      {
+        "objective": 91797640.0,
+        "best_bound": 90987100.0,
+        "conflicts": 1235,
+        "branches": 3908,
+        "wall_time_s": 1.6064307480000002,
+        "assignments": 36
+      },
+      {
+        "objective": 91548180.0,
+        "best_bound": 90987100.0,
+        "conflicts": 0,
+        "branches": 1810,
+        "wall_time_s": 1.8693939640000001,
+        "assignments": 36
+      }
+    ],
+    "L": 50
+  },
+  "phase2": {
+    "status": 4,
+    "status_name": "OPTIMAL",
+    "response": "CpSolverResponse summary:\nstatus: OPTIMAL\nobjective: 91123220\nbest_bound: 91123220\nintegers: 1027\nbooleans: 905\nconflicts: 0\nbranches: 1810\npropagations: 28764\ninteger_propagations: 36045\nrestarts: 1810\nlp_iterations: 0\nwalltime: 11.4724\nusertime: 11.4724\ndeterministic_time: 4.15565\ngap_integral: 21.0378\nsolution_fingerprint: 0x921628c8154a6e26\n",
+    "solutions_collected": 29,
+    "solutions_selected": 4,
+    "best_objective": 91123220.0,
+    "best_bound": 91123220.0,
+    "per_table": [
+      {
+        "objective": 91123220.0,
+        "best_bound": 91023280.0,
+        "conflicts": 0,
+        "branches": 1810,
+        "wall_time_s": 3.701235811,
+        "assignments": 36
+      },
+      {
+        "objective": 91388600.0,
+        "best_bound": 91017910.0,
+        "conflicts": 862,
+        "branches": 7961,
+        "wall_time_s": 2.045074849,
+        "assignments": 36
+      },
+      {
+        "objective": 91797640.0,
+        "best_bound": 90987100.0,
+        "conflicts": 1235,
+        "branches": 3908,
+        "wall_time_s": 1.6064307480000002,
+        "assignments": 36
+      },
+      {
+        "objective": 91548180.0,
+        "best_bound": 90987100.0,
+        "conflicts": 0,
+        "branches": 1810,
+        "wall_time_s": 1.8693939640000001,
+        "assignments": 36
+      }
+    ],
+    "L": 50
+  },
+  "run": {
+    "timestamp": "20251102_075827",
+    "seed": 1234,
+    "out_dir": "Result_1",
+    "files": {
+      "grid": "Result_1/schedules.xlsx",
+      "hospital": "Result_1/hospital_schedule.xlsx",
+      "calendar": "Result_1/calendar.xlsx",
+      "capacity": "Result_1/eligibility_capacity.json"
+    }
+  }
+}
