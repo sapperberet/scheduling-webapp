@@ -1395,10 +1395,8 @@ export default function RunTab() {
             setIsRunning(false);
             setSolverState('finished');
             
-            // Show results if available
-            if (status.results) {
-              setAwsResult(status);
-            }
+            // Results will be shown in Results Manager tab
+            addLog('[INFO] Check Results Manager tab to view completed results', 'info');
           } else if (status.status === 'failed' || status.status === 'error') {
             addLog(`[ERROR] Job failed: ${status.error || 'Unknown error'}`, 'error');
             localStorage.removeItem('aws_solver_run_id');
