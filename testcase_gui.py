@@ -1995,6 +1995,14 @@ def Solve_test_case(case):
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
     
+    # Run diagnosis on hospital schedule (works in both local and Lambda)
+    if hosp_path and os.path.exists(hosp_path):
+        try:
+            logger.info("Running diagnosis on schedule: %s", hosp_path)
+            run_diag(case, hosp_path)
+        except Exception as e:
+            logger.error("Diagnosis failed: %s", str(e))
+    
     return tables, meta
 
 
