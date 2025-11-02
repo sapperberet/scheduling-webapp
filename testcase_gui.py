@@ -1643,10 +1643,19 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
 
     total_time = float(get_num(consts, 'solver', 'max_time_in_seconds', default=120))
     frac = float(get_num(consts, 'solver', 'phase1_fraction', default=0.4))
-    # For big cases, ensure Phase 2 gets enough time. Minimum 10s each, cap phase1 at 60% max
-    t1 = min(total_time * 0.6, max(10.0, total_time * frac))
-    t2 = max(20.0, total_time - t1)  # Give Phase 2 at least 20s for solution collection
-    logger.info("Time budget total=%.2fs split: phase1=%.2fs phase2=%.2fs", total_time, t1, t2)
+    
+    # CRITICAL: Tight time budget to avoid 120s Lambda timeout
+    # Phase 1: Do hard constraint solving (30s for large cases)
+    # Phase 2: Collect solutions from soft objective (remaining time, but max 50s)
+    case_size = len(ctx.get('shifts', []))
+    if case_size > 100:
+        t1 = 35.0  # Large case: quick Phase 1
+        t2 = min(50.0, total_time - t1 - 5.0)  # Phase 2 gets remaining, but max 50s (leave 5s buffer)
+    else:
+        t1 = 60.0  # Small case: standard Phase 1
+        t2 = min(40.0, total_time - t1 - 5.0)  # Phase 2 max 40s
+    
+    logger.info("Time budget total=%.2fs split: phase1=%.2fs phase2=%.2fs (case_size=%d)", total_time, t1, t2, case_size)
 
     # Phase-2 directly on ctx['model'] with soft objective (existing pipeline)
     ctx2 = ctx
@@ -1658,21 +1667,31 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         try: solver2.parameters.num_search_workers=int(sp['num_threads'])
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
-    # For big cases (>100 shifts), use relaxed gap to allow solutions to be found
+    
+    # For large cases, be VERY relaxed about gap to find solutions quickly
     case_size = len(ctx2.get('shifts', []))
-    default_gap = 0.5 if case_size > 100 else 0.01  # 50% gap for big cases, 1% for small
+    if case_size > 100:
+        default_gap = 0.99  # Accept ANY feasible solution for large cases (99% relaxed)
+    elif case_size > 50:
+        default_gap = 0.75  # Accept good enough for medium cases (75% relaxed)
+    else:
+        default_gap = 0.01  # Optimize well for small cases (1% gap)
+    
     try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', default_gap))
     except: pass
+    
     solver2.parameters.log_search_progress = True
-    solver2.parameters.log_to_stdout = False    # Capture solver progress into unified log
-    # Optimize for solution finding: use more diverse search strategies
+    solver2.parameters.log_to_stdout = False
     solver2.parameters.use_absl_random = True
+    # Enable early stopping: stop as soon as first solution found
+    solver2.parameters.stop_after_first_solution = False  # Keep searching but accept early
+    
     try:
         solver2.log_callback = lambda line: logging.getLogger("scheduler").info("[phase2] %s", line.rstrip())
     except Exception:
         pass
     if seed is not None: solver2.parameters.random_seed = int(seed)
-    logger.info("Phase-2 solve: time=%ss workers=%s rgap=%s seed=%s",
+    logger.info("Phase-2 solve: time=%ss workers=%s rgap=%s seed=%s (AGGRESSIVE MODE for large cases)",
                 solver2.parameters.max_time_in_seconds,
                 getattr(solver2.parameters, "num_search_workers", None),
                 getattr(solver2.parameters, "relative_gap_limit", None),
