@@ -454,6 +454,86 @@ async def get_status(run_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/stop/{run_id}")
+async def stop_solver(run_id: str):
+    """Stop a running solver job by terminating the ECS task"""
+    logger.info(f"[STOP] Request to stop run: {run_id}")
+    
+    try:
+        # Initialize ECS client
+        ecs_client = boto3.client('ecs', region_name=AWS_REGION)
+        
+        # Find ECS tasks with this run_id
+        cluster_name = os.environ.get('ECS_CLUSTER', 'scheduling-solver-cluster')
+        
+        # List all tasks in the cluster
+        response = ecs_client.list_tasks(cluster=cluster_name, desiredStatus='RUNNING')
+        task_arns = response.get('taskArns', [])
+        
+        if not task_arns:
+            logger.info(f"[STOP] No running tasks found in cluster {cluster_name}")
+            return {
+                "status": "no_task",
+                "message": "No running tasks found. Job may have already completed.",
+                "run_id": run_id
+            }
+        
+        # Describe tasks to find the one with matching run_id
+        tasks_response = ecs_client.describe_tasks(cluster=cluster_name, tasks=task_arns)
+        
+        stopped_tasks = []
+        for task in tasks_response.get('tasks', []):
+            # Check if this task's environment variables contain our run_id
+            for container in task.get('containers', []):
+                env_vars = {e['name']: e.get('value', '') for e in container.get('environment', [])}
+                if env_vars.get('RUN_ID') == run_id:
+                    # Stop this task
+                    task_arn = task['taskArn']
+                    logger.info(f"[STOP] Stopping ECS task: {task_arn}")
+                    ecs_client.stop_task(
+                        cluster=cluster_name,
+                        task=task_arn,
+                        reason=f'User requested stop for run {run_id}'
+                    )
+                    stopped_tasks.append(task_arn)
+        
+        if stopped_tasks:
+            # Update S3 status to stopped
+            status_key = f"runs/{run_id}/status.json"
+            status_data = {
+                "run_id": run_id,
+                "status": "stopped",
+                "progress": 0,
+                "message": "Solver stopped by user",
+                "stopped_at": datetime.utcnow().isoformat()
+            }
+            s3_client.put_object(
+                Bucket=S3_BUCKET,
+                Key=status_key,
+                Body=json.dumps(status_data),
+                ContentType='application/json'
+            )
+            
+            logger.info(f"[STOP] Stopped {len(stopped_tasks)} task(s) for run {run_id}")
+            return {
+                "status": "stopped",
+                "message": f"Successfully stopped {len(stopped_tasks)} task(s)",
+                "run_id": run_id,
+                "stopped_tasks": stopped_tasks
+            }
+        else:
+            logger.warning(f"[STOP] No task found with RUN_ID={run_id}")
+            return {
+                "status": "not_found",
+                "message": "No running task found for this job. It may have already completed.",
+                "run_id": run_id
+            }
+            
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to stop run {run_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop solver: {str(e)}")
+
+
 @app.get("/results/folders")
 async def list_result_folders():
     """List all Result_N folders in S3 with file info"""

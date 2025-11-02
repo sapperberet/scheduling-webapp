@@ -1348,27 +1348,55 @@ export default function RunTab() {
 }
   };
 
-  const stopSolver = () => {
-    // Stop button behavior for serverless AWS Lambda:
-    // - Cannot actually stop a running Lambda/ECS job (it's already running on AWS)
-    // - Stop local polling and reset UI to "ready" state
-    // - Clear localStorage so it doesn't resume on refresh
-    // - The solver continues running in background on AWS
-    // - User can manually check S3 for results later
+  const stopSolver = async () => {
+    // STOP PROCESS: Actually terminate the ECS task running the solver
+    // This will kill the solver job on AWS (not just stop tracking)
     
-    addLog('[INFO] 🛑 Stopping local polling - AWS job continues in background', 'info');
-    addLog('[INFO] You can close this browser. Results will be saved to S3 when complete.', 'info');
-    addLog('[INFO] To resume tracking this job, you\'ll need to manually check S3 results.', 'info');
+    const confirmStop = confirm(
+      '⚠️ Are you sure you want to STOP the solver process?\n\n' +
+      'This will terminate the running job on AWS.\n' +
+      'The solver will stop computing and no results will be saved.\n\n' +
+      'Click OK to stop, or Cancel to continue running.'
+    );
     
-    // Clear all localStorage tracking
-    localStorage.removeItem('aws_solver_run_id');
-    localStorage.removeItem('aws_solver_start_time');
-    localStorage.removeItem('solver-running');
-    localStorage.removeItem('solver-state');
+    if (!confirmStop) {
+      addLog('[INFO] Stop cancelled - solver continues running', 'info');
+      return;
+    }
     
-    setIsRunning(false);
-    setSolverState('ready');
-    setProgress(0);
+    addLog('[INFO] 🛑 Stopping solver process on AWS...', 'warning');
+    
+    try {
+      const savedRunId = localStorage.getItem('aws_solver_run_id');
+      if (!savedRunId) {
+        addLog('[ERROR] No active job to stop', 'error');
+        return;
+      }
+      
+      // Call API to stop the ECS task
+      const response = await fetch(`${process.env.NEXT_PUBLIC_AWS_SOLVER_URL}/stop/${savedRunId}`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        addLog('[SUCCESS] Solver process stopped successfully', 'success');
+        addLog('[INFO] The ECS task has been terminated', 'info');
+        
+        // Clear tracking
+        localStorage.removeItem('aws_solver_run_id');
+        localStorage.removeItem('aws_solver_start_time');
+        
+        setIsRunning(false);
+        setSolverState('ready');
+        setProgress(0);
+      } else {
+        addLog('[ERROR] Failed to stop solver process', 'error');
+        addLog('[INFO] You can manually stop the ECS task from AWS Console', 'warning');
+      }
+    } catch (error) {
+      addLog(`[ERROR] Failed to stop solver: ${error}`, 'error');
+      addLog('[INFO] The solver may still be running on AWS', 'warning');
+    }
   };
 
   const handleResumeJob = async () => {
@@ -2684,7 +2712,7 @@ export default function RunTab() {
               {isMonthSelectionLocked ? 'The month has been selected.' : 'Select Month for Script and click Apply to enable runs.'}
             </div>
           </div>
-          {/* Stop Button - only show when running */}
+          {/* Stop Process Button - only show when running */}
           {isRunning && (
             <button
               onClick={stopSolver}
@@ -2692,19 +2720,10 @@ export default function RunTab() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-red-300/20 to-red-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               <IoStopSharp className="w-5 h-5 relative z-10" />
-              <span className="relative z-10">Stop Tracking</span>
+              <span className="relative z-10">Stop Process</span>
             </button>
           )}
 
-          {/* Resume Job Button - only show when not running */}
-          {!isRunning && (
-            <button
-              onClick={() => setShowResumeDialog(true)}
-              className="relative px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold flex items-center justify-center space-x-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 overflow-hidden group"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-300/20 to-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              <IoSync className="w-5 h-5 relative z-10" />
-              <span className="relative z-10">Resume Job</span>
             </button>
           )}
           
