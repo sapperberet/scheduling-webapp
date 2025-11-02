@@ -113,8 +113,6 @@ export default function RunTab() {
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
-  const [showResumeDialog, setShowResumeDialog] = useState(false);
-  const [resumeRunId, setResumeRunId] = useState('');
   
   // Sync state to localStorage whenever it changes (task-oriented persistence)
   useEffect(() => {
@@ -1399,76 +1397,6 @@ export default function RunTab() {
     }
   };
 
-  const handleResumeJob = async () => {
-    if (!resumeRunId.trim()) {
-      addLog('[ERROR] Please enter a valid Run ID', 'error');
-      return;
-    }
-
-    const runIdToResume = resumeRunId.trim();
-    addLog('═══════════════════════════════════════════════════', 'info');
-    addLog(`🔄 Manually resuming job: ${runIdToResume}`, 'info');
-    addLog('Checking job status...', 'info');
-    addLog('═══════════════════════════════════════════════════', 'info');
-
-    // Save to localStorage for auto-resume on refresh
-    localStorage.setItem('aws_solver_run_id', runIdToResume);
-    localStorage.setItem('aws_solver_start_time', Date.now().toString());
-
-    setIsRunning(true);
-    setSolverState('running');
-    setShowResumeDialog(false);
-    setResumeRunId('');
-
-    // Start polling
-    const pollResumedJob = async () => {
-      try {
-        const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_AWS_SOLVER_URL}/status/${runIdToResume}`);
-        if (statusResponse.ok) {
-          const status = await statusResponse.json();
-
-          if (status.status === 'completed') {
-            addLog('[SUCCESS] Job already completed!', 'success');
-            setProgress(100);
-            localStorage.removeItem('aws_solver_run_id');
-            localStorage.removeItem('aws_solver_start_time');
-            setIsRunning(false);
-            setSolverState('finished');
-            
-            // Results will be shown in Results Manager tab
-            addLog('[INFO] Check Results Manager tab to view completed results', 'info');
-          } else if (status.status === 'failed' || status.status === 'error') {
-            addLog(`[ERROR] Job failed: ${status.error || 'Unknown error'}`, 'error');
-            localStorage.removeItem('aws_solver_run_id');
-            localStorage.removeItem('aws_solver_start_time');
-            setIsRunning(false);
-            setSolverState('error');
-          } else {
-            // Still running
-            if (status.progress !== undefined) {
-              setProgress(status.progress);
-              if (status.message) {
-                addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
-              }
-            }
-            setTimeout(pollResumedJob, 10000); // Continue polling
-          }
-        } else {
-          addLog('[ERROR] Could not fetch job status - job may not exist', 'error');
-          localStorage.removeItem('aws_solver_run_id');
-          localStorage.removeItem('aws_solver_start_time');
-          setIsRunning(false);
-          setSolverState('ready');
-        }
-      } catch (error) {
-        addLog(`[ERROR] Failed to resume job: ${error}`, 'error');
-        setIsRunning(false);
-        setSolverState('error');
-      }
-    };
-
-    pollResumedJob();
-  };
 
   const handleExportLatestSchedule = async () => {
     addLog('[INFO] Exporting latest schedule...', 'info');
@@ -2903,56 +2831,6 @@ export default function RunTab() {
           </div>
         </div>
       </div>
-
-      {/* Resume Job Dialog */}
-      {showResumeDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-          <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 w-full max-w-md mx-4">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center space-x-2">
-                  <IoSync className="w-6 h-6 text-blue-500" />
-                  <span>Resume Job</span>
-                </h3>
-                <button
-                  onClick={() => { setShowResumeDialog(false); setResumeRunId(''); }}
-                  className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                Enter the Run ID of a job you want to resume tracking. You can find the Run ID in the logs when you start a job.
-              </p>
-
-              <input
-                type="text"
-                value={resumeRunId}
-                onChange={(e) => setResumeRunId(e.target.value)}
-                placeholder="e.g., ecbee92f-ee2b-470f-a7d4-bb5cb9128f7c"
-                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all mb-4"
-              />
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => { setShowResumeDialog(false); setResumeRunId(''); }}
-                  className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 font-semibold transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleResumeJob}
-                  disabled={!resumeRunId.trim()}
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  Resume
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Local Solver Installation Guide Modal */}
       <LocalSolverGuideModal
