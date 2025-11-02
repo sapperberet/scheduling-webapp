@@ -1,0 +1,35 @@
+{
+  "phase1": {
+    "status": 0,
+    "status_name": "UNKNOWN",
+    "response": "CpSolverResponse summary:\nstatus: UNKNOWN\nobjective: 18988579300\nbest_bound: 24432760\nintegers: 6701\nbooleans: 6525\nconflicts: 0\nbranches: 13082\npropagations: 195688\ninteger_propagations: 267753\nrestarts: 13075\nlp_iterations: 17689\nwalltime: 20.0103\nusertime: 20.0103\ndeterministic_time: 2.79304\ngap_integral: 60.9904\n",
+    "solutions_collected": 0,
+    "solutions_selected": 0,
+    "best_objective": null,
+    "best_bound": null,
+    "per_table": [],
+    "L": 1
+  },
+  "phase2": {
+    "status": 0,
+    "status_name": "UNKNOWN",
+    "response": "CpSolverResponse summary:\nstatus: UNKNOWN\nobjective: 18988579300\nbest_bound: 24432760\nintegers: 6701\nbooleans: 6525\nconflicts: 0\nbranches: 13082\npropagations: 195688\ninteger_propagations: 267753\nrestarts: 13075\nlp_iterations: 17689\nwalltime: 20.0103\nusertime: 20.0103\ndeterministic_time: 2.79304\ngap_integral: 60.9904\n",
+    "solutions_collected": 0,
+    "solutions_selected": 0,
+    "best_objective": null,
+    "best_bound": null,
+    "per_table": [],
+    "L": 1
+  },
+  "run": {
+    "timestamp": "20251102_101510",
+    "seed": 4,
+    "out_dir": "Result_1",
+    "files": {
+      "grid": "Result_1/schedules.xlsx",
+      "hospital": "Result_1/hospital_schedule.xlsx",
+      "calendar": "Result_1/calendar.xlsx",
+      "capacity": "Result_1/eligibility_capacity.json"
+    }
+  }
+}

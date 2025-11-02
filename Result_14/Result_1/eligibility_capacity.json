@@ -1,7 +1,7 @@
 [
   {
     "provider": "Matt Basinger",
-    "eligible_days_upper_bound": 18,
+    "eligible_days_upper_bound": 22,
     "min_total": 8,
     "max_total": 10
   },
@@ -12,32 +12,80 @@
     "max_total": 3
   },
   {
-    "provider": "Keahi Horowitz",
-    "eligible_days_upper_bound": 10,
+    "provider": "Justin Cook",
+    "eligible_days_upper_bound": 31,
     "min_total": 0,
     "max_total": 22
   },
   {
-    "provider": "Murray McLachlan",
-    "eligible_days_upper_bound": 26,
+    "provider": "Ryan Doumani",
+    "eligible_days_upper_bound": 25,
     "min_total": 10,
-    "max_total": 22
+    "max_total": 12
   },
   {
-    "provider": "Tanner Muggli",
-    "eligible_days_upper_bound": 19,
+    "provider": "Lauren Eickelberg",
+    "eligible_days_upper_bound": 24,
     "min_total": 12,
     "max_total": 22
   },
   {
-    "provider": "Anna Nelson",
+    "provider": "Catherine Erickson",
     "eligible_days_upper_bound": 23,
     "min_total": 0,
     "max_total": 22
   },
   {
+    "provider": "Arman Faroghi",
+    "eligible_days_upper_bound": 25,
+    "min_total": 0,
+    "max_total": 22
+  },
+  {
+    "provider": "Aloysius Fobi",
+    "eligible_days_upper_bound": 25,
+    "min_total": 4,
+    "max_total": 5
+  },
+  {
+    "provider": "Kassel Galaty",
+    "eligible_days_upper_bound": 21,
+    "min_total": 12,
+    "max_total": 22
+  },
+  {
+    "provider": "Siobhan Gray",
+    "eligible_days_upper_bound": 29,
+    "min_total": 0,
+    "max_total": 22
+  },
+  {
+    "provider": "Keahi Horowitz",
+    "eligible_days_upper_bound": 14,
+    "min_total": 0,
+    "max_total": 22
+  },
+  {
+    "provider": "Murray McLachlan",
+    "eligible_days_upper_bound": 31,
+    "min_total": 10,
+    "max_total": 22
+  },
+  {
+    "provider": "Tanner Muggli",
+    "eligible_days_upper_bound": 24,
+    "min_total": 12,
+    "max_total": 22
+  },
+  {
+    "provider": "Anna Nelson",
+    "eligible_days_upper_bound": 26,
+    "min_total": 0,
+    "max_total": 22
+  },
+  {
     "provider": "EJ Nichter",
-    "eligible_days_upper_bound": 8,
+    "eligible_days_upper_bound": 13,
     "min_total": 0,
     "max_total": 22
   },
@@ -49,19 +97,19 @@
   },
   {
     "provider": "Isaac Siegfried",
-    "eligible_days_upper_bound": 15,
+    "eligible_days_upper_bound": 19,
     "min_total": 12,
     "max_total": 22
   },
   {
     "provider": "Nicholas Levin",
-    "eligible_days_upper_bound": 26,
+    "eligible_days_upper_bound": 31,
     "min_total": 1,
     "max_total": 22
   },
   {
     "provider": "P Extra",
-    "eligible_days_upper_bound": 26,
+    "eligible_days_upper_bound": 31,
     "min_total": 1,
     "max_total": 22
   }

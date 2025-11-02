@@ -1,10 +1,10 @@
 {
-  "run_id": "1c24a656-ca9a-4a37-8465-777e206287f6",
-  "created_at": "2025-11-02T08:16:32.590839",
+  "run_id": "cb41859b-046e-49f7-9849-b37c5b70a51b",
+  "created_at": "2025-11-02T10:16:03.214097",
   "solver_type": "aws_lambda_worker",
-  "solutions_count": 4,
-  "folder_name": "result_3",
-  "result_number": 3,
-  "runtime_seconds": 17.53,
+  "solutions_count": 0,
+  "folder_name": "result_1",
+  "result_number": 1,
+  "runtime_seconds": 61.0,
   "file_count": 9
 }

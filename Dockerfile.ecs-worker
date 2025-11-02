@@ -1,0 +1,31 @@
+# ECS Fargate Worker Dockerfile - NO TIME LIMIT
+# This can run for HOURS processing solver jobs
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy and install Python dependencies
+COPY requirements-solver.txt .
+RUN pip install --no-cache-dir -r requirements-solver.txt
+RUN pip install --no-cache-dir boto3 openpyxl
+
+# Copy solver code
+COPY solver_worker_ecs.py .
+COPY solver_core_real.py .
+COPY testcase_gui.py .
+
+# Healthcheck (optional but recommended for ECS)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import boto3; print('healthy')" || exit 1
+
+# Run the ECS worker (polls SQS forever)
+CMD ["python", "-u", "solver_worker_ecs.py"]

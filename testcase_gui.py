@@ -1641,21 +1641,17 @@ def _select_diverse_k(cb_pool, cb_vecs, K: int, L: int, *, sense='min', relax_to
 def solve_two_phase(consts, case, ctx, K, seed=None):
     logger = logging.getLogger("scheduler")
 
-    total_time = float(get_num(consts, 'solver', 'max_time_in_seconds', default=120))
+    # Use FULL timeout from constants file - NO artificial limits
+    # In ECS Fargate, this can be HOURS (35+ hours allowed by constants)
+    # In Lambda, max is 900s (but that's a deployment issue, not a code issue)
+    total_time = float(get_num(consts, 'solver', 'max_time_in_seconds', default=3600))
     frac = float(get_num(consts, 'solver', 'phase1_fraction', default=0.4))
     
-    # CRITICAL: Tight time budget to avoid 120s Lambda timeout
-    # Phase 1: Do hard constraint solving (30s for large cases)
-    # Phase 2: Collect solutions from soft objective (remaining time, but max 50s)
-    case_size = len(ctx.get('shifts', []))
-    if case_size > 100:
-        t1 = 35.0  # Large case: quick Phase 1
-        t2 = min(50.0, total_time - t1 - 5.0)  # Phase 2 gets remaining, but max 50s (leave 5s buffer)
-    else:
-        t1 = 60.0  # Small case: standard Phase 1
-        t2 = min(40.0, total_time - t1 - 5.0)  # Phase 2 max 40s
+    # Split time between Phase 1 (hard constraints) and Phase 2 (soft objectives)
+    t1 = total_time * frac  # Phase 1 gets frac of time
+    t2 = total_time * (1.0 - frac)  # Phase 2 gets rest
     
-    logger.info("Time budget total=%.2fs split: phase1=%.2fs phase2=%.2fs (case_size=%d)", total_time, t1, t2, case_size)
+    logger.info("Time budget total=%.2fs split: phase1=%.2fs phase2=%.2fs", total_time, t1, t2)
 
     # Phase-2 directly on ctx['model'] with soft objective (existing pipeline)
     ctx2 = ctx

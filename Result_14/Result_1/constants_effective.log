@@ -1,5 +1,5 @@
 Effective constants (after null/default handling)
-(time overridden by case.run.time to 1500 sec)
+(time overridden by case.run.time to 1 sec)
 - weights.hard.uncovered_shift: used=0.0 raw=None default=0.0 *DEFAULTED* 
 - weights.hard.slack_unfilled: used=20.0 raw=20 default=0.0
 - weights.hard.slack_shift_less: used=1.0 raw=1 default=0.0
@@ -23,10 +23,10 @@ Effective constants (after null/default handling)
 - objective.hard: used=1.0 raw=1 default=1.0
 - objective.soft: used=1.0 raw=1 default=1.0
 - objective.fair: used=0.0 raw=0 default=0.0
-- solver.max_time_in_seconds: used=1500.0 raw=125999.99999999999 default=120.0 [overridden_by_run_config]
+- solver.max_time_in_seconds: used=1.0 raw=125999.99999999999 default=120.0 [overridden_by_run_config]
 - solver.phase1_fraction: used=0.4 raw=0.4 default=0.4
 - solver.relative_gap: used=1e-05 raw=1e-05 default=0.01
-- solver.num_threads: used=16.0 raw=16 default=8
+- solver.num_threads: used=1.0 raw=1 default=8
 
 Flags:
 - solver.min_total_is_hard: False
