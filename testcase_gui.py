@@ -1668,17 +1668,19 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
     
-    # For large cases, be VERY relaxed about gap to find solutions quickly
+    # For large cases, FORCE relaxed gap (ignore case file) to find solutions quickly
     case_size = len(ctx2.get('shifts', []))
     if case_size > 100:
-        default_gap = 0.99  # Accept ANY feasible solution for large cases (99% relaxed)
+        # FORCE 20% gap for large cases - find SOMETHING in 50s rather than NOTHING
+        solver2.parameters.relative_gap_limit = 0.20
     elif case_size > 50:
-        default_gap = 0.75  # Accept good enough for medium cases (75% relaxed)
+        # Use 10% gap for medium cases
+        solver2.parameters.relative_gap_limit = 0.10
     else:
-        default_gap = 0.01  # Optimize well for small cases (1% gap)
-    
-    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', default_gap))
-    except: pass
+        # For small cases, use case file gap if provided, else 1%
+        default_gap = 0.01
+        try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', default_gap))
+        except: pass
     
     solver2.parameters.log_search_progress = True
     solver2.parameters.log_to_stdout = False
