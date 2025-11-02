@@ -235,15 +235,18 @@ def upload_results_to_s3(run_id: str, solver_output_dir: str, metadata: Dict[str
 def update_job_status(run_id: str, status: str, metadata: Dict[str, Any]):
     """Update job status in S3 (for frontend polling)"""
     try:
-        status_key = f"jobs/{run_id}/status.json"
+        status_key = f"runs/{run_id}/status.json"
         s3_client.put_object(
             Bucket=S3_BUCKET,
             Key=status_key,
             Body=json.dumps({
                 'run_id': run_id,
                 'status': status,
+                'progress': metadata.get('progress', 0),
+                'message': metadata.get('message', ''),
                 'updated_at': datetime.utcnow().isoformat(),
-                'metadata': metadata
+                'result': metadata.get('result'),
+                'output_directory': metadata.get('output_directory')
             }, indent=2),
             ContentType='application/json'
         )
