@@ -243,30 +243,11 @@ export default function RunTab() {
     const initialLog = `${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`;
     setLogs([initialLog]);
     
-    // Reset ALL state to fix stuck UI
-    setIsRunning(false);
-    setProgress(0);
-    setSolverState('ready');
-    setRunId(null);
-    
-    // Clear localStorage
+    // Clear logs from localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('solver-logs', JSON.stringify([initialLog]));
-      localStorage.removeItem('aws_solver_run_id');
-      localStorage.removeItem('aws_solver_start_time');
-      localStorage.setItem('solver-running', 'false');
-      localStorage.setItem('solver-state', 'ready');
-      localStorage.setItem('solver-progress', '0');
     }
-    
-    // Clear any active polling
-    if (pollingTimerRef.current) {
-      clearTimeout(pollingTimerRef.current);
-      pollingTimerRef.current = null;
-    }
-    
-    addLog('[INFO] State reset - ready for new run', 'info');
-  }, [addLog]);
+  }, []);
 
   // Check local solver availability on component mount
   const checkLocalSolverAvailability = useCallback(async () => {
@@ -536,9 +517,10 @@ export default function RunTab() {
       return;
     }
     
-    // Check if already polling
-    if (isRunning && pollingTimerRef.current) {
-      // Already polling, don't start again
+    // Check if there's actually a job to resume (look at localStorage, not timer ref)
+    // If timer is running, we're already polling - don't restart
+    if (pollingTimerRef.current && isRunning) {
+      // Already actively polling, don't restart
       return;
     }
     
@@ -624,6 +606,86 @@ export default function RunTab() {
       }
     };
   }, [addLog, isRunning]); // Run when addLog is ready OR when isRunning changes
+
+  // Handle visibility changes (e.g., returning to browser tab or app)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) return; // Page hidden, do nothing
+      
+      // Page became visible - check if we need to resume polling
+      const savedRunId = localStorage.getItem('aws_solver_run_id');
+      if (!savedRunId) return; // No active job
+      
+      const savedStartTime = localStorage.getItem('aws_solver_start_time');
+      if (!savedStartTime) return;
+      
+      const startTime = parseInt(savedStartTime, 10);
+      const elapsed = Date.now() - startTime;
+      const maxRunTime = 12 * 60 * 60 * 1000; // 12 HOURS
+      
+      if (elapsed >= maxRunTime) return; // Job expired
+      
+      // If polling timer is active, no need to restart
+      if (pollingTimerRef.current) return;
+      
+      // Otherwise, restart polling by triggering auto-resume
+      addLog('🔄 Page became visible - resuming polling...', 'info');
+      setIsRunning(true);
+      setSolverState('running');
+      
+      // Restart polling with same logic as auto-resume
+      const resumePolling = async () => {
+        try {
+          const AWS_SOLVER_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+          if (!AWS_SOLVER_URL) return;
+          
+          const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${savedRunId}`);
+          if (statusResponse.ok) {
+            const status = await statusResponse.json();
+            
+            if (status.status === 'completed') {
+              addLog('[SUCCESS] Job completed!', 'success');
+              setProgress(100);
+              localStorage.removeItem('aws_solver_run_id');
+              localStorage.removeItem('aws_solver_start_time');
+              setIsRunning(false);
+              setSolverState('finished');
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
+            } else if (status.status === 'failed' || status.status === 'error') {
+              addLog(`[ERROR] Job failed: ${status.error}`, 'error');
+              localStorage.removeItem('aws_solver_run_id');
+              localStorage.removeItem('aws_solver_start_time');
+              setIsRunning(false);
+              setSolverState('error');
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
+            } else {
+              if (status.progress !== undefined) {
+                setProgress(status.progress);
+                if (status.message) {
+                  addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
+                }
+              }
+              pollingTimerRef.current = setTimeout(resumePolling, 10000);
+            }
+          }
+        } catch (error) {
+          console.error('Visibility change polling error:', error);
+          pollingTimerRef.current = setTimeout(resumePolling, 10000);
+        }
+      };
+      
+      resumePolling();
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [addLog]);
 
   // WebSocket and polling functions removed for serverless approach
   
@@ -1456,7 +1518,27 @@ export default function RunTab() {
     try {
       const savedRunId = localStorage.getItem('aws_solver_run_id');
       if (!savedRunId) {
-        addLog('[ERROR] No active job to stop', 'error');
+        addLog('[WARNING] No active job found in storage', 'warning');
+        addLog('[INFO] Resetting UI state...', 'info');
+        
+        // Reset everything since there's no job to stop
+        localStorage.removeItem('aws_solver_run_id');
+        localStorage.removeItem('aws_solver_start_time');
+        localStorage.removeItem('solver-running');
+        localStorage.removeItem('solver-state');
+        localStorage.removeItem('solver-progress');
+        
+        // Clear polling timer if any
+        if (pollingTimerRef.current) {
+          clearTimeout(pollingTimerRef.current);
+          pollingTimerRef.current = null;
+        }
+        
+        setIsRunning(false);
+        setSolverState('ready');
+        setProgress(0);
+        
+        addLog('[SUCCESS] UI state reset successfully', 'success');
         return;
       }
       
@@ -1472,17 +1554,67 @@ export default function RunTab() {
         // Clear tracking
         localStorage.removeItem('aws_solver_run_id');
         localStorage.removeItem('aws_solver_start_time');
+        localStorage.removeItem('solver-running');
+        localStorage.removeItem('solver-state');
+        localStorage.removeItem('solver-progress');
+        
+        // Clear polling timer
+        if (pollingTimerRef.current) {
+          clearTimeout(pollingTimerRef.current);
+          pollingTimerRef.current = null;
+        }
         
         setIsRunning(false);
         setSolverState('ready');
         setProgress(0);
       } else {
-        addLog('[ERROR] Failed to stop solver process', 'error');
-        addLog('[INFO] You can manually stop the ECS task from AWS Console', 'warning');
+        const errorData = await response.json().catch(() => ({}));
+        
+        // If job not found on AWS, still reset the UI
+        if (response.status === 404 || errorData.status === 'not_found') {
+          addLog('[WARNING] Job not found on AWS (may have already completed)', 'warning');
+          addLog('[INFO] Resetting UI state...', 'info');
+          
+          localStorage.removeItem('aws_solver_run_id');
+          localStorage.removeItem('aws_solver_start_time');
+          localStorage.removeItem('solver-running');
+          localStorage.removeItem('solver-state');
+          localStorage.removeItem('solver-progress');
+          
+          if (pollingTimerRef.current) {
+            clearTimeout(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+          }
+          
+          setIsRunning(false);
+          setSolverState('ready');
+          setProgress(0);
+          
+          addLog('[SUCCESS] UI state reset successfully', 'success');
+        } else {
+          addLog('[ERROR] Failed to stop solver process', 'error');
+          addLog('[INFO] You can manually stop the ECS task from AWS Console', 'warning');
+        }
       }
     } catch (error) {
       addLog(`[ERROR] Failed to stop solver: ${error}`, 'error');
-      addLog('[INFO] The solver may still be running on AWS', 'warning');
+      addLog('[WARNING] Resetting UI state anyway...', 'warning');
+      
+      // Reset UI even on error
+      localStorage.removeItem('aws_solver_run_id');
+      localStorage.removeItem('aws_solver_start_time');
+      localStorage.removeItem('solver-running');
+      localStorage.removeItem('solver-state');
+      localStorage.removeItem('solver-progress');
+      
+      if (pollingTimerRef.current) {
+        clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
+      
+      setIsRunning(false);
+      setSolverState('ready');
+      setProgress(0);
     }
   };
 
