@@ -326,30 +326,32 @@ export default function RunTab() {
   }, [addLog]);
 
   // Real-time log streaming from AWS solver
-  useEffect(() => {
-    if (!runId) return;
-
-    const eventSource = new EventSource(`/api/logs/${runId}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'log') {
-          addLog(data.message, data.level || 'info');
-        }
-      } catch (error) {
-        console.error('Failed to parse log event:', error);
-      }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [runId, addLog]);
+  // NOTE: Disabled - EventSource endpoint not implemented in Lambda.
+  // The polling mechanism in resumePolling() handles status updates.
+  // useEffect(() => {
+  //   if (!runId) return;
+  //
+  //   const eventSource = new EventSource(`/api/logs/${runId}`);
+  //
+  //   eventSource.onmessage = (event) => {
+  //     try {
+  //       const data = JSON.parse(event.data);
+  //       if (data.type === 'log') {
+  //         addLog(data.message, data.level || 'info');
+  //       }
+  //     } catch (error) {
+  //       console.error('Failed to parse log event:', error);
+  //     }
+  //   };
+  //
+  //   eventSource.onerror = () => {
+  //     eventSource.close();
+  //   };
+  //
+  //   return () => {
+  //     eventSource.close();
+  //   };
+  // }, [runId, addLog]);
 
   // Installation status management functions
   const STORAGE_KEY = 'localSolverInstallationStatus';
