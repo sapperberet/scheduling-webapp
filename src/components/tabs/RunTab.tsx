@@ -238,14 +238,35 @@ export default function RunTab() {
     });
   }, []);
 
-  // Clear logs function
+  // Clear logs function - also resets stuck state
   const clearLogs = useCallback(() => {
     const initialLog = `${new Date().toLocaleTimeString()} [INFO] Ready to run optimization...`;
     setLogs([initialLog]);
+    
+    // Reset ALL state to fix stuck UI
+    setIsRunning(false);
+    setProgress(0);
+    setSolverState('ready');
+    setRunId(null);
+    
+    // Clear localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('solver-logs', JSON.stringify([initialLog]));
+      localStorage.removeItem('aws_solver_run_id');
+      localStorage.removeItem('aws_solver_start_time');
+      localStorage.setItem('solver-running', 'false');
+      localStorage.setItem('solver-state', 'ready');
+      localStorage.setItem('solver-progress', '0');
     }
-  }, []);
+    
+    // Clear any active polling
+    if (pollingTimerRef.current) {
+      clearTimeout(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+    
+    addLog('[INFO] State reset - ready for new run', 'info');
+  }, [addLog]);
 
   // Check local solver availability on component mount
   const checkLocalSolverAvailability = useCallback(async () => {
