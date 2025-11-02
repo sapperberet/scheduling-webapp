@@ -282,36 +282,41 @@ def process_solver_job(message_body: Dict[str, Any]):
         with tempfile.TemporaryDirectory() as temp_dir:
             logger.info(f"Temporary directory: {temp_dir}")
             
+            # Save case data to JSON file (solver_core_real expects a file path)
+            case_file_path = os.path.join(temp_dir, 'case.json')
+            with open(case_file_path, 'w') as f:
+                json.dump(case_data, f, indent=2)
+            logger.info(f"Case file saved: {case_file_path}")
+            
             # Run the solver - THIS CAN TAKE HOURS!
             logger.info(f"Starting solver (estimated {estimated_duration}s)...")
             start_time = time.time()
             
-            result = solver_core_real.solve_case(
-                constants=constants,
-                calendar=case_data.get('calendar', {}),
-                shifts=case_data.get('shifts', []),
-                providers=case_data.get('providers', []),
-                run_config=case_data.get('run', {}),
-                output_dir=temp_dir
-            )
+            # Call the REAL solver (returns tables and metadata)
+            tables, meta = solver_core_real.Solve_test_case_lambda(case_file_path)
             
             elapsed = time.time() - start_time
             logger.info(f"Solver completed in {elapsed:.2f}s")
+            logger.info(f"Generated {len(tables)} solution(s)")
             
             # Stop progress tracker
             if progress_tracker:
                 progress_tracker.stop()
             
+            # Get output directory from metadata
+            output_dir = meta.get('output_dir', temp_dir)
+            logger.info(f"Output directory: {output_dir}")
+            
             # Upload results to S3
             metadata = {
                 'run_id': run_id,
                 'runtime_seconds': elapsed,
-                'solver_stats': result.get('solver_stats', {}),
-                'solutions_count': len(result.get('solutions', [])),
-                'timestamp': datetime.utcnow().isoformat()
+                'solutions_count': len(tables),
+                'timestamp': datetime.utcnow().isoformat(),
+                'solver_metadata': meta
             }
             
-            folder_name = upload_results_to_s3(run_id, temp_dir, metadata)
+            folder_name = upload_results_to_s3(run_id, output_dir, metadata)
             
             # Update status: completed
             update_job_status(run_id, 'completed', {
