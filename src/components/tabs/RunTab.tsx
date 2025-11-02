@@ -499,73 +499,85 @@ export default function RunTab() {
     const savedRunId = localStorage.getItem('aws_solver_run_id');
     const savedStartTime = localStorage.getItem('aws_solver_start_time');
     
-    if (savedRunId && savedStartTime) {
-      const startTime = parseInt(savedStartTime, 10);
-      const elapsed = Date.now() - startTime;
-      const maxRunTime = 12 * 60 * 60 * 1000; // 12 HOURS (safety limit for very long jobs)
-      
-      // Only resume if job started less than 12 hours ago
-      if (elapsed < maxRunTime) {
-        // Add separator and resume message
-        addLog('═══════════════════════════════════════════════════', 'info');
-        addLog(`🔄 Resuming job: ${savedRunId}`, 'info');
-        addLog(`⏱️  Job has been running for ${Math.round(elapsed / 60000)} minutes`, 'info');
-        addLog('Continuing to poll for updates...', 'info');
-        addLog('═══════════════════════════════════════════════════', 'info');
-        
-        setIsRunning(true);
-        setSolverState('running');
-        
-        // Start polling for this job
-        const resumePolling = async () => {
-          try {
-            const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_AWS_SOLVER_URL}/status/${savedRunId}`);
-            if (statusResponse.ok) {
-              const status = await statusResponse.json();
-              
-              if (status.status === 'completed') {
-                addLog('[SUCCESS] Job completed while you were away!', 'success');
-                localStorage.removeItem('aws_solver_run_id');
-                localStorage.removeItem('aws_solver_start_time');
-                setIsRunning(false);
-                setSolverState('finished');
-              } else if (status.status === 'failed' || status.status === 'error') {
-                addLog(`[ERROR] Job failed: ${status.error}`, 'error');
-                localStorage.removeItem('aws_solver_run_id');
-                localStorage.removeItem('aws_solver_start_time');
-                setIsRunning(false);
-                setSolverState('error');
-              } else {
-                // Still running - continue polling
-                if (status.progress !== undefined) {
-                  setProgress(status.progress);
-                  // Log progress updates
-                  if (status.message) {
-                    addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
-                  }
-                }
-                setTimeout(resumePolling, 10000); // Poll every 10s
-              }
-            } else {
-              addLog('[WARN] Could not check job status - job may have completed', 'warning');
-              localStorage.removeItem('aws_solver_run_id');
-              localStorage.removeItem('aws_solver_start_time');
-              setIsRunning(false);
-              setSolverState('ready');
-            }
-          } catch (error) {
-            console.error('Resume polling error:', error);
-          }
-        };
-        
-        resumePolling();
-      } else {
-        // Job too old, clear it
-        localStorage.removeItem('aws_solver_run_id');
-        localStorage.removeItem('aws_solver_start_time');
-      }
+    if (!savedRunId || !savedStartTime) return;
+    
+    const startTime = parseInt(savedStartTime, 10);
+    const elapsed = Date.now() - startTime;
+    const maxRunTime = 12 * 60 * 60 * 1000; // 12 HOURS
+    
+    // Only resume if job started less than 12 hours ago
+    if (elapsed >= maxRunTime) {
+      // Job too old, clear it
+      localStorage.removeItem('aws_solver_run_id');
+      localStorage.removeItem('aws_solver_start_time');
+      localStorage.removeItem('solver-running');
+      localStorage.removeItem('solver-state');
+      addLog('[INFO] Previous job expired (older than 12 hours)', 'info');
+      return;
     }
-  }, []); // Run once on mount
+    
+    // Add separator and resume message
+    addLog('═══════════════════════════════════════════════════', 'info');
+    addLog(`🔄 AUTO-RESUMING job: ${savedRunId}`, 'info');
+    addLog(`⏱️  Job has been running for ${Math.round(elapsed / 60000)} minutes`, 'info');
+    addLog('Continuing to poll for updates...', 'info');
+    addLog('═══════════════════════════════════════════════════', 'info');
+    
+    setIsRunning(true);
+    setSolverState('running');
+    
+    // Start polling for this job
+    const resumePolling = async () => {
+      try {
+        const AWS_SOLVER_URL = process.env.NEXT_PUBLIC_AWS_SOLVER_URL;
+        if (!AWS_SOLVER_URL) {
+          addLog('[ERROR] AWS Solver URL not configured', 'error');
+          return;
+        }
+        
+        const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${savedRunId}`);
+        if (statusResponse.ok) {
+          const status = await statusResponse.json();
+          
+          if (status.status === 'completed') {
+            addLog('[SUCCESS] Job completed while you were away!', 'success');
+            setProgress(100);
+            localStorage.removeItem('aws_solver_run_id');
+            localStorage.removeItem('aws_solver_start_time');
+            setIsRunning(false);
+            setSolverState('finished');
+          } else if (status.status === 'failed' || status.status === 'error') {
+            addLog(`[ERROR] Job failed: ${status.error}`, 'error');
+            localStorage.removeItem('aws_solver_run_id');
+            localStorage.removeItem('aws_solver_start_time');
+            setIsRunning(false);
+            setSolverState('error');
+          } else {
+            // Still running - continue polling
+            if (status.progress !== undefined) {
+              setProgress(status.progress);
+              // Log progress updates
+              if (status.message) {
+                addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
+              }
+            }
+            setTimeout(resumePolling, 10000); // Poll every 10s
+          }
+        } else {
+          addLog('[WARN] Could not check job status - job may have completed', 'warning');
+          localStorage.removeItem('aws_solver_run_id');
+          localStorage.removeItem('aws_solver_start_time');
+          setIsRunning(false);
+          setSolverState('ready');
+        }
+      } catch (error) {
+        addLog(`[ERROR] Failed to resume polling: ${error}`, 'error');
+        console.error('Resume polling error:', error);
+      }
+    };
+    
+    resumePolling();
+  }, [addLog]); // Run when addLog is ready
 
   // WebSocket and polling functions removed for serverless approach
   
