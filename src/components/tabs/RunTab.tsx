@@ -504,8 +504,13 @@ export default function RunTab() {
       
       // Only resume if job started less than 12 hours ago
       if (elapsed < maxRunTime) {
-        addLog(`[INFO] Resuming polling for job: ${savedRunId}`, 'info');
-        addLog(`[INFO] Job started ${Math.round(elapsed / 1000)}s ago (${Math.round(elapsed / 60000)} minutes)`, 'info');
+        // Add separator and resume message
+        addLog('═══════════════════════════════════════════════════', 'info');
+        addLog(`🔄 Resuming job: ${savedRunId}`, 'info');
+        addLog(`⏱️  Job has been running for ${Math.round(elapsed / 60000)} minutes`, 'info');
+        addLog('Continuing to poll for updates...', 'info');
+        addLog('═══════════════════════════════════════════════════', 'info');
+        
         setIsRunning(true);
         setSolverState('running');
         
@@ -530,7 +535,13 @@ export default function RunTab() {
                 setSolverState('error');
               } else {
                 // Still running - continue polling
-                if (status.progress) setProgress(status.progress);
+                if (status.progress !== undefined) {
+                  setProgress(status.progress);
+                  // Log progress updates
+                  if (status.message) {
+                    addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
+                  }
+                }
                 setTimeout(resumePolling, 10000); // Poll every 10s
               }
             } else {
