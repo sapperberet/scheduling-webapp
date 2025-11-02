@@ -1068,18 +1068,14 @@ export default function RunTab() {
                 }
               }, 10000); // Poll every 10 seconds
               
-              // Wait for result (timeout after 10 minutes)
-              const maxWaitTime = 600000;
-              const startWait = Date.now();
-              while (!result && (Date.now() - startWait < maxWaitTime)) {
+              // Wait for result (NO TIMEOUT - solver can run for hours)
+              // Job will be saved to localStorage and can be resumed after page refresh
+              // The 12-hour safety limit in useEffect handles extreme cases
+              while (!result) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
               
               if (pollInterval) clearInterval(pollInterval);
-              
-              if (!result) {
-                throw new Error('AWS optimization timed out');
-              }
             } else if (awsResult.status === 'queued' || awsResult.status === 'processing') {
               // Async response - job queued, poll for status
               addLog(`[INFO] Job queued: ${awsResult.run_id}. Polling for status...`, 'info');
@@ -1108,18 +1104,14 @@ export default function RunTab() {
                 }
               }, 10000); // Poll every 10 seconds
               
-              // Wait for completion (max 10 minutes)
-              const maxWaitTime2 = 10 * 60 * 1000;
-              const startWait2 = Date.now();
-              while (!result && (Date.now() - startWait2 < maxWaitTime2)) {
+              // Wait for completion (NO TIMEOUT - solver can run for hours)
+              // Job will be saved to localStorage and can be resumed after page refresh
+              // The 12-hour safety limit in useEffect handles extreme cases
+              while (!result) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
               
               if (statusPollInterval) clearInterval(statusPollInterval);
-              
-              if (!result) {
-                throw new Error('AWS optimization timed out');
-              }
             } else if (awsResult.status === 'completed' || awsResult.results) {
               // Synchronous response - AWS completed immediately
               result = awsResult;
