@@ -1144,7 +1144,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
             s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
             e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            e2 = dt.datetime.fromisoformat(shifts[iter1]["end"])
+            e2 = dt.datetime.fromisoformat(shifts[iter2]["end"])
             
             if(s1 > s2): continue
             bad = 0
