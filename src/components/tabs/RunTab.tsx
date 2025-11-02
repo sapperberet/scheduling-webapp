@@ -113,6 +113,7 @@ export default function RunTab() {
   const [localSolverAvailable, setLocalSolverAvailable] = useState<boolean | null>(null);
   const [solverInfo, setSolverInfo] = useState<SolverInfo | null>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
+  const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Sync state to localStorage whenever it changes (task-oriented persistence)
   useEffect(() => {
@@ -514,6 +515,12 @@ export default function RunTab() {
       return;
     }
     
+    // Check if already polling
+    if (isRunning && pollingTimerRef.current) {
+      // Already polling, don't start again
+      return;
+    }
+    
     // Add separator and resume message
     addLog('═══════════════════════════════════════════════════', 'info');
     addLog(`🔄 AUTO-RESUMING job: ${savedRunId}`, 'info');
@@ -544,12 +551,20 @@ export default function RunTab() {
             localStorage.removeItem('aws_solver_start_time');
             setIsRunning(false);
             setSolverState('finished');
+            if (pollingTimerRef.current) {
+              clearTimeout(pollingTimerRef.current);
+              pollingTimerRef.current = null;
+            }
           } else if (status.status === 'failed' || status.status === 'error') {
             addLog(`[ERROR] Job failed: ${status.error}`, 'error');
             localStorage.removeItem('aws_solver_run_id');
             localStorage.removeItem('aws_solver_start_time');
             setIsRunning(false);
             setSolverState('error');
+            if (pollingTimerRef.current) {
+              clearTimeout(pollingTimerRef.current);
+              pollingTimerRef.current = null;
+            }
           } else {
             // Still running - continue polling
             if (status.progress !== undefined) {
@@ -559,7 +574,7 @@ export default function RunTab() {
                 addLog(`${Math.round(status.progress)}% - ${status.message}`, 'info');
               }
             }
-            setTimeout(resumePolling, 10000); // Poll every 10s
+            pollingTimerRef.current = setTimeout(resumePolling, 10000); // Poll every 10s
           }
         } else {
           addLog('[WARN] Could not check job status - job may have completed', 'warning');
@@ -567,6 +582,10 @@ export default function RunTab() {
           localStorage.removeItem('aws_solver_start_time');
           setIsRunning(false);
           setSolverState('ready');
+          if (pollingTimerRef.current) {
+            clearTimeout(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+          }
         }
       } catch (error) {
         addLog(`[ERROR] Failed to resume polling: ${error}`, 'error');
@@ -575,7 +594,15 @@ export default function RunTab() {
     };
     
     resumePolling();
-  }, [addLog]); // Run when addLog is ready
+    
+    // Cleanup on unmount
+    return () => {
+      if (pollingTimerRef.current) {
+        clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
+    };
+  }, [addLog, isRunning]); // Run when addLog is ready OR when isRunning changes
 
   // WebSocket and polling functions removed for serverless approach
   
@@ -1047,11 +1074,16 @@ export default function RunTab() {
               addLog(`[INFO] Job ID: ${awsResult.run_id} (persisted - safe to refresh)`, 'info');
               setSolverState('running');
               
+              // Clear any existing polling timer
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
+              
               // Poll for status updates with real progress
-              let pollInterval: NodeJS.Timeout | null = null;
               let lastProgress = 0;
               
-              pollInterval = setInterval(async () => {
+              const pollAwsStatus = async () => {
                 try {
                   const statusResponse = await fetch(`${AWS_SOLVER_URL}/status/${awsResult.run_id}`);
                   if (statusResponse.ok) {
@@ -1061,7 +1093,7 @@ export default function RunTab() {
                     if (status.progress !== undefined && status.progress !== lastProgress) {
                       lastProgress = status.progress;
                       setProgress(Math.min(status.progress, 95));
-                      addLog(`[PROGRESS] ${Math.round(status.progress)}% - ${status.message || 'Processing...'}`, 'info');
+                      addLog(`${Math.round(status.progress)}% - ${status.message || 'Processing...'}`, 'info');
                     }
                     
                     // Log any status messages
@@ -1071,25 +1103,38 @@ export default function RunTab() {
                     
                     // Check if completed
                     if (status.status === 'completed') {
-                      if (pollInterval) clearInterval(pollInterval);
+                      if (pollingTimerRef.current) {
+                        clearTimeout(pollingTimerRef.current);
+                        pollingTimerRef.current = null;
+                      }
                       result = status;
                       addLog('[SUCCESS] AWS optimization completed', 'success');
                       // Clear saved job from localStorage
                       localStorage.removeItem('aws_solver_run_id');
                       localStorage.removeItem('aws_solver_start_time');
                     } else if (status.status === 'failed' || status.status === 'error') {
-                      if (pollInterval) clearInterval(pollInterval);
+                      if (pollingTimerRef.current) {
+                        clearTimeout(pollingTimerRef.current);
+                        pollingTimerRef.current = null;
+                      }
                       // Clear saved job from localStorage
                       localStorage.removeItem('aws_solver_run_id');
                       localStorage.removeItem('aws_solver_start_time');
                       throw new Error(status.error || 'AWS optimization failed');
+                    } else {
+                      // Continue polling
+                      pollingTimerRef.current = setTimeout(pollAwsStatus, 10000);
                     }
                   }
                 } catch (pollError) {
                   console.error('Status polling error:', pollError);
-                  // Don't stop polling on individual errors - connection might be temporary
+                  // Continue polling on temporary errors
+                  pollingTimerRef.current = setTimeout(pollAwsStatus, 10000);
                 }
-              }, 10000); // Poll every 10 seconds
+              };
+              
+              // Start polling
+              pollAwsStatus();
               
               // Wait for result (NO TIMEOUT - solver can run for hours)
               // Job will be saved to localStorage and can be resumed after page refresh
@@ -1098,34 +1143,54 @@ export default function RunTab() {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
               
-              if (pollInterval) clearInterval(pollInterval);
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
             } else if (awsResult.status === 'queued' || awsResult.status === 'processing') {
               // Async response - job queued, poll for status
               addLog(`[INFO] Job queued: ${awsResult.run_id}. Polling for status...`, 'info');
               
+              // Clear any existing polling timer
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
+              
               // Poll status endpoint
-              const statusPollInterval = setInterval(async () => {
+              const pollQueuedStatus = async () => {
                 try {
                   const statusResp = await fetch(`${AWS_SOLVER_URL}/status/${awsResult.run_id}`);
                   if (statusResp.ok) {
                     const statusData = await statusResp.json();
                     if (statusData.progress !== undefined) {
                       setProgress(statusData.progress);
-                      addLog(`[PROGRESS] ${Math.round(statusData.progress)}% - ${statusData.message || 'Processing...'}`, 'info');
+                      addLog(`${Math.round(statusData.progress)}% - ${statusData.message || 'Processing...'}`, 'info');
                     }
                     if (statusData.status === 'completed') {
-                      clearInterval(statusPollInterval);
+                      if (pollingTimerRef.current) {
+                        clearTimeout(pollingTimerRef.current);
+                        pollingTimerRef.current = null;
+                      }
                       result = statusData;
                       setProgress(100);
+                    } else {
+                      // Continue polling
+                      pollingTimerRef.current = setTimeout(pollQueuedStatus, 10000);
                     }
                   } else {
                     console.error('Status response not ok:', statusResp.status);
+                    pollingTimerRef.current = setTimeout(pollQueuedStatus, 10000);
                   }
                 } catch (e) {
                   console.error('Status poll error:', e);
                   addLog(`[DEBUG] Polling error: ${e}`, 'warning');
+                  pollingTimerRef.current = setTimeout(pollQueuedStatus, 10000);
                 }
-              }, 10000); // Poll every 10 seconds
+              };
+              
+              // Start polling
+              pollQueuedStatus();
               
               // Wait for completion (NO TIMEOUT - solver can run for hours)
               // Job will be saved to localStorage and can be resumed after page refresh
@@ -1134,7 +1199,10 @@ export default function RunTab() {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
               
-              if (statusPollInterval) clearInterval(statusPollInterval);
+              if (pollingTimerRef.current) {
+                clearTimeout(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+              }
             } else if (awsResult.status === 'completed' || awsResult.results) {
               // Synchronous response - AWS completed immediately
               result = awsResult;
