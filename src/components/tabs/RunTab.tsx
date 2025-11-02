@@ -500,12 +500,12 @@ export default function RunTab() {
     if (savedRunId && savedStartTime) {
       const startTime = parseInt(savedStartTime, 10);
       const elapsed = Date.now() - startTime;
-      const maxRunTime = 10 * 60 * 1000; // 10 minutes
+      const maxRunTime = 12 * 60 * 60 * 1000; // 12 HOURS (safety limit for very long jobs)
       
-      // Only resume if job started less than 10 minutes ago
+      // Only resume if job started less than 12 hours ago
       if (elapsed < maxRunTime) {
         addLog(`[INFO] Resuming polling for job: ${savedRunId}`, 'info');
-        addLog(`[INFO] Job started ${Math.round(elapsed / 1000)}s ago`, 'info');
+        addLog(`[INFO] Job started ${Math.round(elapsed / 1000)}s ago (${Math.round(elapsed / 60000)} minutes)`, 'info');
         setIsRunning(true);
         setSolverState('running');
         
