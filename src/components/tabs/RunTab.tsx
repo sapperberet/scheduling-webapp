@@ -1259,17 +1259,20 @@ export default function RunTab() {
   };
 
   const stopSolver = () => {
-    // Stop button now refreshes the page (which stops the solver)
-    // This matches what the user discovered: refreshing stops the AWS Lambda job
-    addLog('[WARN] Stopping solver and refreshing page...', 'warning');
+    // Stop button behavior for serverless AWS Lambda:
+    // - Cannot actually stop a running Lambda job (it's already queued on AWS)
+    // - Just reset UI to "ready" state
+    // - The solver continues running in background on AWS
+    // - User can close browser and come back later to check results
+    // - Results will be available in S3 when Lambda completes
+    
+    addLog('[INFO] Solver polling stopped - AWS Lambda job continues in background', 'info');
+    addLog('[INFO] You can close this browser and come back later to check results', 'info');
+    addLog('[INFO] Results will be saved to S3 when optimization completes', 'info');
+    
     setIsRunning(false);
     setSolverState('ready');
     setProgress(0);
-    
-    // Refresh page after a brief delay to show the log message
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
   };
 
   const handleExportLatestSchedule = async () => {
