@@ -1,0 +1,257 @@
+name: Deploy ECS Fargate Worker
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'solver_worker_ecs.py'
+      - 'solver_core_real.py'
+      - 'testcase_gui.py'
+      - 'Dockerfile.ecs-worker'
+      - 'requirements-solver.txt'
+      - '.github/workflows/deploy-ecs-worker.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: scheduling-solver-ecs-worker
+  ECS_CLUSTER: scheduling-solver-cluster
+  ECS_SERVICE: solver-worker
+  ECS_TASK_DEFINITION: solver-worker-task
+  CONTAINER_NAME: solver-worker
+
+jobs:
+  deploy:
+    name: Deploy ECS Worker
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Create ECR repository if not exists
+      continue-on-error: true
+      run: |
+        aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} || \
+        aws ecr create-repository \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --image-scanning-configuration scanOnPush=true \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build Docker image
+        docker build -f Dockerfile.ecs-worker -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        # Push both tags
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Get SQS Queue URL
+      id: get-queue
+      run: |
+        QUEUE_URL=$(aws sqs get-queue-url --queue-name scheduling-solver-jobs --region ${{ env.AWS_REGION }} --query "QueueUrl" --output text)
+        echo "queue_url=$QUEUE_URL" >> $GITHUB_OUTPUT
+
+    - name: Create CloudWatch Log Group
+      continue-on-error: true
+      run: |
+        aws logs create-log-group --log-group-name /ecs/${{ env.CONTAINER_NAME }} --region ${{ env.AWS_REGION }} || true
+
+    - name: Create ECS Task Execution Role if not exists
+      continue-on-error: true
+      run: |
+        # Check if role exists
+        aws iam get-role --role-name ecsTaskExecutionRole 2>/dev/null || \
+        {
+          # Create role
+          aws iam create-role \
+            --role-name ecsTaskExecutionRole \
+            --assume-role-policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+                "Action": "sts:AssumeRole"
+              }]
+            }'
+          
+          # Attach policy
+          aws iam attach-role-policy \
+            --role-name ecsTaskExecutionRole \
+            --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        }
+
+    - name: Create ECS Task Role if not exists
+      continue-on-error: true
+      run: |
+        # Check if role exists
+        aws iam get-role --role-name ecsTaskRole 2>/dev/null || \
+        {
+          # Create role
+          aws iam create-role \
+            --role-name ecsTaskRole \
+            --assume-role-policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+                "Action": "sts:AssumeRole"
+              }]
+            }'
+          
+          # Attach policies
+          aws iam attach-role-policy \
+            --role-name ecsTaskRole \
+            --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+          
+          aws iam attach-role-policy \
+            --role-name ecsTaskRole \
+            --policy-arn arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        }
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      env:
+        IMAGE: ${{ steps.build-image.outputs.image }}
+        QUEUE_URL: ${{ steps.get-queue.outputs.queue_url }}
+      run: |
+        # Get AWS Account ID
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        
+        # Create task definition JSON
+        cat > task-definition.json << EOF
+        {
+          "family": "${{ env.ECS_TASK_DEFINITION }}",
+          "networkMode": "awsvpc",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "2048",
+          "memory": "8192",
+          "executionRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/ecsTaskExecutionRole",
+          "taskRoleArn": "arn:aws:iam::${ACCOUNT_ID}:role/ecsTaskRole",
+          "containerDefinitions": [
+            {
+              "name": "${{ env.CONTAINER_NAME }}",
+              "image": "${IMAGE}",
+              "essential": true,
+              "environment": [
+                {
+                  "name": "S3_RESULTS_BUCKET",
+                  "value": "scheduling-solver-results"
+                },
+                {
+                  "name": "AWS_REGION",
+                  "value": "${{ env.AWS_REGION }}"
+                },
+                {
+                  "name": "SQS_QUEUE_URL",
+                  "value": "${QUEUE_URL}"
+                }
+              ],
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "/ecs/${{ env.CONTAINER_NAME }}",
+                  "awslogs-region": "${{ env.AWS_REGION }}",
+                  "awslogs-stream-prefix": "ecs"
+                }
+              }
+            }
+          ]
+        }
+        EOF
+        
+        # Register task definition
+        aws ecs register-task-definition \
+          --cli-input-json file://task-definition.json \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Create ECS cluster if not exists
+      continue-on-error: true
+      run: |
+        aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }} || \
+        aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+    - name: Deploy Amazon ECS task definition
+      run: |
+        # Get default VPC and subnets
+        VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --region ${{ env.AWS_REGION }} --query "Vpcs[0].VpcId" --output text)
+        SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --region ${{ env.AWS_REGION }} --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
+        SECURITY_GROUP=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --region ${{ env.AWS_REGION }} --query "SecurityGroups[0].GroupId" --output text)
+        
+        # Try to update existing service
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE }} \
+          --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --force-new-deployment \
+          --region ${{ env.AWS_REGION }} 2>/dev/null || \
+        {
+          # Create new service if update failed
+          echo "Service doesn't exist, creating new service..."
+          aws ecs create-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
+            --region ${{ env.AWS_REGION }}
+        }
+
+    - name: Wait for service stability
+      run: |
+        echo "Waiting for ECS service to stabilize..."
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Get service status
+      run: |
+        echo "==================================================================="
+        echo "ECS Service Deployed Successfully!"
+        echo "==================================================================="
+        aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE }} \
+          --region ${{ env.AWS_REGION }} \
+          --query "services[0].[serviceName,status,runningCount,desiredCount]" \
+          --output table
+        
+        echo ""
+        echo "View logs:"
+        echo "  aws logs tail /ecs/${{ env.CONTAINER_NAME }} --region ${{ env.AWS_REGION }} --follow"
+
+    - name: Deployment summary
+      run: |
+        echo "### ✅ ECS Fargate Worker Deployed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Cluster:** ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Service:** ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Task Definition:** ${{ env.ECS_TASK_DEFINITION }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Runtime:** UNLIMITED (no 15-minute Lambda timeout)" >> $GITHUB_STEP_SUMMARY
+        echo "**Resources:** 2 vCPU, 8GB RAM" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The worker is now polling SQS and can process jobs for HOURS! 🚀" >> $GITHUB_STEP_SUMMARY
