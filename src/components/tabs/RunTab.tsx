@@ -2651,9 +2651,6 @@ export default function RunTab() {
               <span className="relative z-10">Stop Process</span>
             </button>
           )}
-
-            </button>
-          )}
           
           {/* Open Output Folder */}
           {/* <button
