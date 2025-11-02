@@ -1266,11 +1266,16 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # Optional: this goes through the logger anyway
     print(solver.ObjectiveValue() if obj1 is not None else "No objective")
 
-
-    # slacks enforced
-    # now we solve for soft constraints
-    for i in (slack_unfilled + slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
-        model.Add(i == solver.Value(i))
+    # CRITICAL: Only enforce Phase 1 slacks if Phase 1 found a feasible solution!
+    # If Phase 1 fails (UNKNOWN status), don't enforce bad values - let Phase 2 find its own solution
+    if st1 in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # slacks enforced from Phase 1
+        # now we solve for soft constraints
+        for i in (slack_unfilled + slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
+            model.Add(i == solver.Value(i))
+        logger.info("Phase-1 slacks enforced (feasible solution found)")
+    else:
+        logger.warning("Phase-1 failed with status %s - not enforcing slacks, let Phase 2 find solution", solver.StatusName(st1))
 
     # soft penalty 
     Weighted = model.NewIntVar(0, 1000000000000000000, "Weighted")
@@ -1666,8 +1671,33 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
     logger.info("Phase-2 best objective=%s best bound=%s", solver2.ObjectiveValue(), solver2.BestObjectiveBound())
     logger.info("Pool collected=%d", len(cb.pool))
 
+    # If Phase 2 found no feasible solutions, try to extract ANY assignment from the model
+    # This can happen if constraints are too tight
+    if len(cb.pool) == 0 and st2 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        logger.warning("Phase-2 failed with status %s and no solutions collected. Attempting partial solution...", solver2.StatusName())
+        # Try to get partial assignment (best effort)
+        try:
+            partial_assign = set()
+            for s, j in ctx2['x']:
+                if solver2.BestResponse() and solver2.SufficientlyOptimal():
+                    val = solver2.Value(ctx2['x'][s, j]) if hasattr(ctx2['x'], '__getitem__') else 0
+                    if val > 0:
+                        partial_assign.add((s, j))
+            if partial_assign:
+                logger.info("Extracted partial assignment with %d assignments", len(partial_assign))
+                partial_table = {
+                    'days': ctx2.get('days', []),
+                    'providers': ctx2.get('providers', []),
+                    'shifts': ctx2.get('shifts', []),
+                    'assignment': partial_assign
+                }
+                cb.pool.append((None, partial_table, {"objective": 999999, "partial": True}))
+                logger.info("Added partial solution to pool")
+        except Exception as e:
+            logger.exception("Failed to extract partial solution: %s", e)
+
     # Choose K diverse-best by Hamming ÔëÑ L (with relaxation)
-    selected_idx = _select_diverse_k(cb.pool, cb.pool_vecs, K, L, sense='min', relax_to=0)
+    selected_idx = _select_diverse_k(cb.pool, cb.pool_vecs, K, L, sense='min', relax_to=0) if cb.pool else []
     tables = [cb.pool[k][1] for k in selected_idx]
     per_meta = [cb.pool[k][2] for k in selected_idx]
 
