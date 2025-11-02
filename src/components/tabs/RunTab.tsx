@@ -492,6 +492,68 @@ export default function RunTab() {
     };
   }, []);
 
+  // Resume polling for any active AWS job after page refresh
+  useEffect(() => {
+    const savedRunId = localStorage.getItem('aws_solver_run_id');
+    const savedStartTime = localStorage.getItem('aws_solver_start_time');
+    
+    if (savedRunId && savedStartTime) {
+      const startTime = parseInt(savedStartTime, 10);
+      const elapsed = Date.now() - startTime;
+      const maxRunTime = 10 * 60 * 1000; // 10 minutes
+      
+      // Only resume if job started less than 10 minutes ago
+      if (elapsed < maxRunTime) {
+        addLog(`[INFO] Resuming polling for job: ${savedRunId}`, 'info');
+        addLog(`[INFO] Job started ${Math.round(elapsed / 1000)}s ago`, 'info');
+        setIsRunning(true);
+        setSolverState('running');
+        
+        // Start polling for this job
+        const resumePolling = async () => {
+          try {
+            const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_AWS_SOLVER_URL}/status/${savedRunId}`);
+            if (statusResponse.ok) {
+              const status = await statusResponse.json();
+              
+              if (status.status === 'completed') {
+                addLog('[SUCCESS] Job completed while you were away!', 'success');
+                localStorage.removeItem('aws_solver_run_id');
+                localStorage.removeItem('aws_solver_start_time');
+                setIsRunning(false);
+                setSolverState('finished');
+              } else if (status.status === 'failed' || status.status === 'error') {
+                addLog(`[ERROR] Job failed: ${status.error}`, 'error');
+                localStorage.removeItem('aws_solver_run_id');
+                localStorage.removeItem('aws_solver_start_time');
+                setIsRunning(false);
+                setSolverState('error');
+              } else {
+                // Still running - continue polling
+                if (status.progress) setProgress(status.progress);
+                setTimeout(resumePolling, 10000); // Poll every 10s
+              }
+            } else {
+              addLog('[WARN] Could not check job status - job may have completed', 'warning');
+              localStorage.removeItem('aws_solver_run_id');
+              localStorage.removeItem('aws_solver_start_time');
+              setIsRunning(false);
+              setSolverState('ready');
+            }
+          } catch (error) {
+            console.error('Resume polling error:', error);
+          }
+        };
+        
+        resumePolling();
+      } else {
+        // Job too old, clear it
+        localStorage.removeItem('aws_solver_run_id');
+        localStorage.removeItem('aws_solver_start_time');
+      }
+    }
+  }, []); // Run once on mount
+
   // WebSocket and polling functions removed for serverless approach
   
   const getSolverIcon = () => {
@@ -954,7 +1016,12 @@ export default function RunTab() {
             
             // Check if AWS returned async response (with run_id and status)
             if (awsResult.run_id && (awsResult.status === 'processing' || awsResult.status === 'accepted')) {
+              // Save run_id to localStorage so we can resume after refresh
+              localStorage.setItem('aws_solver_run_id', awsResult.run_id);
+              localStorage.setItem('aws_solver_start_time', Date.now().toString());
+              
               addLog('[INFO] AWS optimization started, polling for progress...', 'info');
+              addLog(`[INFO] Job ID: ${awsResult.run_id} (persisted - safe to refresh)`, 'info');
               setSolverState('running');
               
               // Poll for status updates with real progress
@@ -984,8 +1051,14 @@ export default function RunTab() {
                       if (pollInterval) clearInterval(pollInterval);
                       result = status;
                       addLog('[SUCCESS] AWS optimization completed', 'success');
+                      // Clear saved job from localStorage
+                      localStorage.removeItem('aws_solver_run_id');
+                      localStorage.removeItem('aws_solver_start_time');
                     } else if (status.status === 'failed' || status.status === 'error') {
                       if (pollInterval) clearInterval(pollInterval);
+                      // Clear saved job from localStorage
+                      localStorage.removeItem('aws_solver_run_id');
+                      localStorage.removeItem('aws_solver_start_time');
                       throw new Error(status.error || 'AWS optimization failed');
                     }
                   }
