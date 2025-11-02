@@ -320,9 +320,25 @@ async def solve(case: SchedulingCase):
             "updated_at": datetime.utcnow().isoformat()
         }
         
+        # Create initial S3 status file so frontend can poll even if Lambda restarts
+        status_key = f"runs/{run_id}/status.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=status_key,
+            Body=json.dumps({
+                "run_id": run_id,
+                "status": "queued",
+                "progress": 0,
+                "message": "Optimization queued, waiting to start",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }, indent=2),
+            ContentType='application/json'
+        )
+        
         logger.info(f"[SOLVE] Queued optimization run: {run_id}")
         
-        # Queue the work on SQS to be processed by scheduling-solver-worker Lambda
+        # Queue the work on SQS to be processed by ECS Fargate worker
         sqs_client = boto3.client('sqs', region_name=AWS_REGION)
         queue_url = os.environ.get('SOLVER_QUEUE_URL', '')
         
@@ -332,14 +348,30 @@ async def solve(case: SchedulingCase):
                     QueueUrl=queue_url,
                     MessageBody=json.dumps({
                         "run_id": run_id,
-                        "case_data": case.dict()
+                        "case": case.dict()
                     })
                 )
                 logger.info(f"[SOLVE] Sent run {run_id} to SQS queue")
             except Exception as queue_error:
                 logger.error(f"[ERROR] Failed to queue on SQS: {queue_error}")
-                # Don't fail the response, just log it
-                # Client can still poll status
+                # Update status to failed in S3
+                s3_client.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=status_key,
+                    Body=json.dumps({
+                        "run_id": run_id,
+                        "status": "failed",
+                        "progress": 0,
+                        "message": f"Failed to queue job: {str(queue_error)}",
+                        "error": str(queue_error),
+                        "created_at": active_runs[run_id]["created_at"],
+                        "updated_at": datetime.utcnow().isoformat()
+                    }, indent=2),
+                    ContentType='application/json'
+                )
+                active_runs[run_id]["status"] = "failed"
+                active_runs[run_id]["message"] = f"Failed to queue job: {str(queue_error)}"
+                raise HTTPException(status_code=500, detail=f"Failed to queue job: {str(queue_error)}")
         else:
             # If no SQS queue configured, run synchronously as fallback
             logger.warning("[WARN] No SOLVER_QUEUE_URL configured, running synchronously as fallback")
