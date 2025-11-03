@@ -1288,7 +1288,8 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
 
     # slacks enforced
     # now we solve for soft constraints
-    for i in (slack_unfilled + slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
+    # NOTE: slack_unfilled is NOT enforced, allowing Phase 2 to optimize shift filling
+    for i in (slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
         model.Add(i == solver.Value(i))
 
     # soft penalty 
@@ -1382,6 +1383,11 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
    # c_cluster_size = int(math.ceil((cclusters / c_cluster_size) ** 0.666))
     for i in P:
         model.Add(deviation[i] == less_sq[i] + more_sq[i])    
+    
+    # Total taken (number of filled shifts) - used to reward filling shifts in Phase 2
+    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
+    model.Add(total_taken == sum(x[i, j] for i in S for j in P))
+    
     # Weekend penalty (works Sat, not Sun)
     second_weekend = max(weekend_idx)
     count_horrible = [model.NewIntVar(0, nshifts, f'weekend_unclustered_{i}') for i in P]
@@ -1471,7 +1477,8 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
                             c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
-                            c_soft_off * sum(soft_off_i))
+                            c_soft_off * sum(soft_off_i) -
+                            100000000000 * total_taken)  # Huge reward for filling shifts
     print(count_horrible)
     model.Minimize(Weighted)
     # (Phase-2 solver is created in solve_two_phase)
