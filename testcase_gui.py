@@ -1258,8 +1258,9 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     c_slack_consec = int(get_num(consts, 'weights', 'hard', 'slack_consec', default=1))
 
     U = model.NewIntVar(0, 10**18, "U")
-    model.Add(U == c_slack_unfilled * sum(slack_unfilled) 
-              + c_slack_shift_less * sum(slack_shift_less) 
+    model.Add(U ==
+              # c_slack_unfilled * sum(slack_unfilled)  # COMMENTED OUT: allow unfilled shifts for better balance
+              c_slack_shift_less * sum(slack_shift_less) 
               + c_slack_shift_more * sum(slack_shift_more) 
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
