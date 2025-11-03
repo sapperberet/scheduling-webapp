@@ -5,7 +5,7 @@ export const DEFAULT_CASE: SchedulingCase = {
     solver: {
       max_time_in_seconds: 126000.0,
       phase1_fraction: 0.4,
-      relative_gap: 0.00001,
+      relative_gap: 0.0,  // FIXED: was 0.00001
       num_threads: 16
     },
     weights: {

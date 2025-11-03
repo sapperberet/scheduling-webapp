@@ -3,7 +3,7 @@
     "solver": {
       "max_time_in_seconds": 125999.99999999999,
       "phase1_fraction": 0.4,
-      "relative_gap": 0.00001,
+      "relative_gap": 0.0,
       "num_threads": 16
     },
     "weights": {
@@ -15,10 +15,10 @@
         "slack_consec": 1
       },
       "soft": {
-        "cluster": 10000,
-        "requested_off": 10000000,
-        "days_wanted_not_met": 10000000,
-        "cluster_weekend_start": 10000000,
+        "cluster": 1000,
+        "requested_off": 1000000,
+        "days_wanted_not_met": 1000000,
+        "cluster_weekend_start": 1000000,
         "unfair_number": 5000,
         "cluster_size": 10
       }
