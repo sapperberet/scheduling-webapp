@@ -517,7 +517,7 @@ def diagnose(case, schedule_map, stream=sys.stdout, preview_limit=8, banner=None
     print(_c_head("\n=== Constraint Check Summary ==="), file=stream)
     for name, ok, details in checks:
         tag = _c_ok("[OK]") if ok else _c_fail("[FAIL]")
-        print(f"{tag} {name}" + (f" ÔÇö {details}" if details else ""), file=stream)
+        print(f"{tag} {name}" + (f" → {details}" if details else ""), file=stream)
 
     def preview(label, rows, limit=8):
         if not rows: return
@@ -967,13 +967,39 @@ def load_inputs_from_case(case_path: str):
 
     # Inline constants inside the case
     consts = case.get('constants', {}) or {}
+    
+    # CRITICAL: If constants are empty or missing, use DEFAULT_CONSTANTS
+    # This ensures solver always has proper configuration
+    if not consts or not isinstance(consts, dict):
+        logger = logging.getLogger("scheduler")
+        logger.warning("Case file missing or has empty 'constants' - using DEFAULT_CONSTANTS")
+        consts = json.loads(json.dumps(DEFAULT_CONSTANTS))  # Deep copy
+    else:
+        # Merge with defaults to fill any missing fields (but preserve case file values)
+        import copy
+        merged_consts = copy.deepcopy(DEFAULT_CONSTANTS)
+        
+        # Deep merge: case file constants override defaults
+        if 'solver' in consts:
+            merged_consts['solver'].update(consts['solver'])
+        if 'weights' in consts:
+            if 'hard' in consts['weights']:
+                merged_consts['weights']['hard'].update(consts['weights']['hard'])
+            if 'soft' in consts['weights']:
+                merged_consts['weights']['soft'].update(consts['weights']['soft'])
+        if 'objective' in consts:
+            merged_consts['objective'].update(consts['objective'])
+        
+        consts = merged_consts
 
     # Optional legacy pointer to external constants
     cpath = case.get('constants_path')
     if cpath and isinstance(cpath, str) and len(cpath) > 0:
         try:
             with open(cpath, 'r', encoding='utf-8') as g:
-                consts = json.load(g)
+                external_consts = json.load(g)
+                # External file takes precedence
+                consts = external_consts
         except Exception:
             pass  # ignore if not found
 
@@ -1978,9 +2004,26 @@ def Solve_test_case(case):
     write_excel_hospital_multi(hosp_path, tables)
     write_excel_calendar_multi(cal_path, tables)
 
+    # Save input case for reference
+    input_case_path = os.path.join(out_dir, 'input_case.json')
+    with open(input_case_path, 'w', encoding='utf-8') as f:
+        json.dump(case, f, indent=2)
+    logger.info("Wrote input case: %s", input_case_path)
+
+    # Save results.json
+    results_path = os.path.join(out_dir, 'results.json')
+    results_data = {
+        "timestamp": ts,
+        "solutions": tables,
+        "metadata": meta
+    }
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(results_data, f, indent=2)
+    logger.info("Wrote results: %s", results_path)
+
     meta['run'] = {"timestamp": ts, "seed": seed, "out_dir": out_dir,
                    "files": {"grid": grid_path, "hospital": hosp_path, "calendar": cal_path,
-                             "capacity": caps_path}}
+                             "capacity": caps_path, "input_case": input_case_path, "results": results_path}}
     meta_path = os.path.join(out_dir, f'scheduler_log_{ts}.json')
     with open(meta_path,'w', encoding='utf-8') as f:
         json.dump(meta, f, indent=2)
@@ -2016,7 +2059,7 @@ DEFAULT_CONSTANTS = {
     "solver": {
         "max_time_in_seconds": 1000,
         "phase1_fraction": 0.4,
-        "relative_gap": 0.00001,
+        "relative_gap": 0.0,
         "num_threads": 8,
     },
     "weights": {
@@ -2028,11 +2071,11 @@ DEFAULT_CONSTANTS = {
             "slack_consec": 1,
         },  # could contain slack_name: BIG_WEIGHT to enforce as hard
         "soft": {
-            "cluster": 10000,
+            "cluster": 1000,
             "cluster_size": 1,  # default requested
-            "requested_off": 10000000,
-            "days_wanted_not_met": 10000000,
-            "cluster_weekend_start": 10000000,
+            "requested_off": 1000000,
+            "days_wanted_not_met": 1000000,
+            "cluster_weekend_start": 1000000,
             "unfair_number": 5000
         },
     },

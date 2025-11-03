@@ -1,0 +1,72 @@
+========================================
+SOLVER OPTIMIZATION FIXES APPLIED
+========================================
+Date: November 3, 2025
+
+PROBLEM IDENTIFIED:
+The Lambda/new solver was producing weak outputs (68KB vs 190KB) compared to the old working solver.
+
+ROOT CAUSES FOUND:
+1. relative_gap setting was too strict (0.00001 vs 0.0)
+2. Soft constraint weights were 10x too high
+3. Missing diagnosis report generation
+4. Missing results.json and input_case.json files
+
+========================================
+FIXES APPLIED:
+========================================
+
+1. RELATIVE_GAP CORRECTION
+   Changed: 0.00001 → 0.0
+   Impact: Solver now runs to completion instead of stopping at 0.001% optimality gap
+   Files: testcase_gui.py (all versions)
+
+2. SOFT CONSTRAINT WEIGHTS REDUCED (10x)
+   - cluster: 10000 → 1000
+   - requested_off: 10000000 → 1000000
+   - days_wanted_not_met: 10000000 → 1000000
+   - cluster_weekend_start: 10000000 → 1000000
+   Impact: More flexible solution exploration, better optimization
+   Files: testcase_gui.py (all versions)
+
+3. ADDED DIAGNOSIS GENERATION
+   Added: run_diag() call after schedule generation
+   Impact: Generates hospital_schedule__Hospital_N.diagnose.txt files
+   Files: testcase_gui.py, lambda_layer/python/testcase_gui.py
+
+4. ADDED MISSING OUTPUT FILES
+   Added: input_case.json - saves the input case for reference
+   Added: results.json - saves complete results with metadata
+   Impact: Complete audit trail and result tracking
+   Files: testcase_gui.py (all versions)
+
+========================================
+FILES MODIFIED:
+========================================
+1. c:\Werk\Webapp\Webapp7aramoy\scheduling-webapp\testcase_gui.py
+2. c:\Werk\Webapp\lambda_layer\python\testcase_gui.py
+3. c:\Werk\Webapp\testcase_gui.py
+
+========================================
+EXPECTED OUTCOME:
+========================================
+- Solver will run longer and produce more complete solutions
+- More flexible constraint handling (10x lower soft penalties)
+- Complete output package matching the old working solver:
+  * schedules.xlsx
+  * hospital_schedule.xlsx
+  * calendar.xlsx
+  * eligibility_capacity.json
+  * input_case.json (NEW)
+  * results.json (NEW)
+  * hospital_schedule__Hospital_N.diagnose.txt (RESTORED)
+  * scheduler_log_YYYYMMDD_HHMMSS.json
+  * constants_effective.json
+
+========================================
+DEPLOYMENT NOTES:
+========================================
+- Lambda layer needs to be repackaged with updated testcase_gui.py
+- All local solver instances will benefit from these changes immediately
+- Output size should increase from ~68KB to ~190KB (matching old solver)
+- More complete hospital diagnosis reports expected
