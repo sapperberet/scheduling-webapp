@@ -64,7 +64,7 @@ SCALE = 1
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-diagnose_schedule_api.py  ÔÇö colorized, expanded diagnostics (multi-sheet aware)
+diagnose_schedule_api.py  → colorized, expanded diagnostics (multi-sheet aware)
 
 Programmatic usage (no CLI):
   from diagnose_schedule_api import run
@@ -1266,7 +1266,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
     model.Minimize(U)
 
-    # Phase-1 solve (hard slacks) ÔÇö VERBOSE + callback into logger
+    # Phase-1 solve (hard slacks) → VERBOSE + callback into logger
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = float(120)
     solver.parameters.num_search_workers = 8
@@ -1743,9 +1743,9 @@ def write_excel_hospital_multi(path, tables):
 def write_excel_calendar_multi(path, tables):
     """
     New calendar export:
-      ÔÇó One sheet per solution: "Calendar_<k>"
-      ÔÇó 8 columns: ["Shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-      ÔÇó Organized in weekly blocks:
+      • One sheet per solution: "Calendar_<k>"
+      • 8 columns: ["Shift", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+      • Organized in weekly blocks:
           - First row of each week shows the day numbers for Mon..Sun.
           - Under that, there are N rows (N = number of distinct shift TYPES
             appearing anywhere in that week). Left column lists those TYPES.
@@ -1753,7 +1753,7 @@ def write_excel_calendar_multi(path, tables):
             If multiple assignees exist, shows the first name + " (+N)".
             If that type exists that day but is unfilled, shows "UNFILLED".
             If that type doesn't exist that day, leaves the cell blank.
-      ÔÇó Weekend columns (Sat, Sun) shaded light red.
+      • Weekend columns (Sat, Sun) shaded light red.
     """
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
@@ -2244,7 +2244,7 @@ class TestcaseGUI:
         filemenu.add_command(label="Exit", command=self.root.quit)
 
         toolsmenu = tk.Menu(menubar, tearoff=0)
-        toolsmenu.add_command(label="Randomly Perturb CaseÔÇª", command=self.menu_perturb_case)
+        toolsmenu.add_command(label="Randomly Perturb Case...", command=self.menu_perturb_case)
 
         menubar.add_cascade(label="File", menu=filemenu)
         menubar.add_cascade(label="Tools", menu=toolsmenu)
@@ -2291,7 +2291,7 @@ class TestcaseGUI:
         ttk.Label(box, text="Output folder name").grid(row=0, column=0, sticky="w", padx=6, pady=3)
         self.ent_out = ttk.Entry(box, width=30)
         self.ent_out.grid(row=0, column=1, sticky="w", padx=6, pady=3)
-        ttk.Button(box, text="Open Output FolderÔÇª", command=self.open_out_folder).grid(row=0, column=2, padx=6)
+        ttk.Button(box, text="Open Output Folder...", command=self.open_out_folder).grid(row=0, column=2, padx=6)
 
         ttk.Label(box, text="k").grid(row=1, column=0, sticky="w", padx=6, pady=3)
         self.ent_r_k = ttk.Entry(box, width=8); self.ent_r_k.grid(row=1, column=1, sticky="w")
@@ -3417,10 +3417,10 @@ class TestcaseGUI:
             bufsize=1            # line-buffered
         )
 
-        # Pump the child's output on a background thread into our internal queueÔÇª
+        # Pump the child's output on a background thread into our internal queue...
         self._io_thread = threading.Thread(target=self._pump_proc_output, daemon=True)
         self._io_thread.start()
-        # ÔÇªand start draining that queue onto the Text widget from the Tk loop
+        # ...and start draining that queue onto the Text widget from the Tk loop
         self._drain_log_queue()
 
     def cancel_solver(self):
@@ -3429,7 +3429,7 @@ class TestcaseGUI:
                 self._proc.terminate()
             except Exception:
                 pass
-            self._log("[run] cancel requestedÔÇª")
+            self._log("[run] cancel requested...")
         else:
             self._warn_to_log("[no active run]")
 
