@@ -1247,7 +1247,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         model.Add(i == solver.Value(i))
 
     # soft penalty 
-    Weighted = model.NewIntVar(0, 1000000000000000000, "Weighted")
+    Weighted = model.NewIntVar(-1000000000000000000, 1000000000000000000, "Weighted")
 
     shifts_by_type = {t: [s for s in S if shift_type[s] == t] for t in types}
     for t in shifts_by_type:
