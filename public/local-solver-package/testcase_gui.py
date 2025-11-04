@@ -1336,11 +1336,55 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     import math
    # c_cluster_size = int(math.ceil((cclusters / c_cluster_size) ** 0.666))
     for i in P:
-        model.Add(deviation[i] == less_sq[i] + more_sq[i])    
+        model.Add(deviation[i] == less_sq[i] + more_sq[i])
+    
+    # OLD CODE FAIRNESS CALCULATION (matching testcase_gui (1).py)
+    # Calculate average target per provider
+    av_target = model.NewIntVar(0, 40, "avg_target")
     
     # Total taken (number of filled shifts) - used to reward filling shifts in Phase 2
     total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
     model.Add(total_taken == sum(x[i, j] for i in S for j in P))
+    
+    # Division: av_target = total_taken / num_providers
+    model.AddDivisionEquality(av_target, total_taken, len(P))
+    
+    # Personal target for each provider based on their limits
+    personal_target = [model.NewIntVar(0, 40, f"personal_target_{j}") for j in P]
+    provider_taken = [model.NewIntVar(0, 40, f"provider_taken_{j}") for j in P]
+    
+    # Auxiliary variables for fairness calculation
+    absv = [model.NewIntVar(0, 40, f"absv{j}") for j in P]
+    abst = [model.NewIntVar(0, 40, f"abst{j}") for j in P]
+    absvsq = [model.NewIntVar(0, 1600, f"abstsq{j}") for j in P]
+    los = [model.NewIntVar(0, 50, f"los{j}") for j in P]
+    
+    # Calculate personal_target for each provider
+    for j in P:
+        lim = providers[j].get('limits', {}) or {}
+        mn = lim.get("min_total", 0)
+        mx = lim.get("max_total", 31)
+        
+        # provider_taken[j] = number of shifts assigned to provider j
+        model.Add(provider_taken[j] == sum(x[s, j] for s in S))
+        
+        # personal_target[j] = min(max(mn, av_target), mx)
+        model.AddMaxEquality(los[j], [mn, av_target])
+        model.AddMinEquality(personal_target[j], [los[j], mx])
+        
+        # absv[j] = |personal_target[j] - provider_taken[j]|
+        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
+        
+        # abst[j] = |personal_target[j] - av_target|
+        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
+        
+        # absvsq[j] = absv[j]^2
+        model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
+    
+    # within_diff = sum of squared deviations from personal targets
+    within_diff = model.NewIntVar(0, 1000, "within_diff")
+    model.Add(within_diff == sum(absvsq))
+
     
     # Weekend penalty (works Sat, not Sun)
     second_weekend = max(weekend_idx)
@@ -1427,12 +1471,12 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
 
 
     model.Add(Weighted == cclusters * sum(cluster_square) +
-                            cunfair * sum(deviation) +
                             c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
                             c_soft_off * sum(soft_off_i) -
-                            100000000000 * total_taken)  # Huge reward for filling shifts
+                            100000000000 * total_taken +  # Huge reward for filling shifts
+                            ((c_soft_on + c_soft_off + 2) // 10 + 1) * within_diff)  # OLD CODE: ~2,000,001 * within_diff
     print(count_horrible)
     model.minimize(Weighted)
     # (Phase-2 solver is created in solve_two_phase)
