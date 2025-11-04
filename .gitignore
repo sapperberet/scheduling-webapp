@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+
+/public/bu
+
 # production
 /build
 

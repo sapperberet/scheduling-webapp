@@ -1338,16 +1338,20 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     for i in P:
         model.Add(deviation[i] == less_sq[i] + more_sq[i])
     
-    # OLD CODE FAIRNESS CALCULATION (matching testcase_gui (1).py)
+    # OLD CODE FAIRNESS CALCULATION (matching testcase_gui_old.py)
+    # Redundant variable s (for old code compatibility)
+    s = model.NewIntVar(0, nshifts + 5, "taken_shifts")
+    model.Add(s == sum(x[i, j] for i in S for j in P))
+    
     # Calculate average target per provider
     av_target = model.NewIntVar(0, 40, "avg_target")
     
     # Total taken (number of filled shifts) - used to reward filling shifts in Phase 2
     total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
-    model.Add(total_taken == sum(x[i, j] for i in S for j in P))
-    
-    # Division: av_target = total_taken / num_providers
+    model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))])
     model.AddDivisionEquality(av_target, total_taken, len(P))
+    #model.Add(av_target * len(P) <= s)
+    #model.Add((av_target + 1) * len(P) >= s)
     
     # Personal target for each provider based on their limits
     personal_target = [model.NewIntVar(0, 40, f"personal_target_{j}") for j in P]
