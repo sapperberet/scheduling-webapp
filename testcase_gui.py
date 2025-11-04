@@ -2028,12 +2028,9 @@ def Solve_test_case(case):
     grid_path=os.path.join(out_dir, f'schedules.xlsx')
     hosp_path=os.path.join(out_dir, f'hospital_schedule.xlsx')
     cal_path=os.path.join(out_dir, f'calendar.xlsx')
-    sched_path=os.path.join(out_dir, f'schedule.xlsx')  # single-sheet backup
     write_excel_grid_multi(grid_path, tables)
     write_excel_hospital_multi(hosp_path, tables)
     write_excel_calendar_multi(cal_path, tables)
-    if tables:
-        write_excel_hospital(sched_path, tables[0])  # first solution only for schedule.xlsx
 
     # Save input case for reference
     input_case_path = os.path.join(out_dir, 'input_case.json')
@@ -2063,14 +2060,12 @@ def Solve_test_case(case):
     print("Wrote:", grid_path)
     print("Wrote:", hosp_path)
     print("Wrote:", cal_path)
-    print("Wrote:", sched_path)
     print("Wrote:", os.path.join(out_dir,'eligibility_capacity.json'))
 
     # Additional logging
     logger.info("Wrote grid: %s", grid_path)
     logger.info("Wrote hospital: %s", hosp_path)
     logger.info("Wrote calendar: %s", cal_path)
-    logger.info("Wrote schedule: %s", sched_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
     
@@ -3578,6 +3573,16 @@ def _solver_child_main(argv):
     print(case_path, CHOSPITAL)
 
     run_diag(case_path, CHOSPITAL)
+
+# ---------- Lambda wrapper ----------
+def Solve_test_case_lambda(case_path):
+    """
+    Lambda-safe wrapper for Solve_test_case.
+    Takes case_path, runs solver, returns (tables, metadata) tuple.
+    """
+    _ensure_tkinter_imported()
+    tables, meta = Solve_test_case(case_path)
+    return tables, meta
 
 # ---------- main ----------
 def main():
