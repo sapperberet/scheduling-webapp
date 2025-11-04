@@ -1359,6 +1359,9 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     absvsq = [model.NewIntVar(0, 1600, f"abstsq{j}") for j in P]
     los = [model.NewIntVar(0, 50, f"los{j}") for j in P]
     
+    # Constraint: maximum deviation from personal target
+    deviations = model.NewIntVar(0, 5000, "deviation")
+    
     # Calculate personal_target for each provider
     for j in P:
         lim = providers[j].get('limits', {}) or {}
@@ -1380,6 +1383,12 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         
         # absvsq[j] = absv[j]^2
         model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
+        
+        # Constrain: each provider's deviation from personal target must be < 4 shifts
+        model.Add(deviations >= absvsq[j])
+    
+    # Maximum squared deviation is 16 (i.e., 4 shifts)
+    model.Add(deviations < 16)
     
     # within_diff = sum of squared deviations from personal targets
     within_diff = model.NewIntVar(0, 1000, "within_diff")
