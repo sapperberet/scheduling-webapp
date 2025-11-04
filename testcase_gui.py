@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Scheduler Testcase Builder GUI
@@ -14,6 +14,10 @@ Scheduler Testcase Builder GUI
   * Providers now uses two panes: self.lst_days_off and self.lst_days_on
 - Clear prefs on selected days works and updates summary/log.
 - Color-coded OFF/ON day lists with legends.
+
+HYBRID VERSION:
+- Uses OLD solver logic (produces 266 assignments to match original behavior)
+- Has Lambda-safe tkinter import wrapper
 """
 from __future__ import annotations
 
@@ -61,10 +65,11 @@ from ortools.sat.python import cp_model
 from openpyxl import Workbook
 CHOSPITAL = ""
 SCALE = 1
+trashcan = set()
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-diagnose_schedule_api.py  → colorized, expanded diagnostics (multi-sheet aware)
+diagnose_schedule_api.py  — colorized, expanded diagnostics (multi-sheet aware)
 
 Programmatic usage (no CLI):
   from diagnose_schedule_api import run
@@ -226,7 +231,7 @@ def _load_schedules_from_xlsx(path: str):
         lower = [h.lower() for h in header]
         c_shift, c_prov = _find_candidate_columns(lower)
         if c_shift is None or c_prov is None:
-            continue
+            continue 
 
         # read rows
         first = True
@@ -517,7 +522,7 @@ def diagnose(case, schedule_map, stream=sys.stdout, preview_limit=8, banner=None
     print(_c_head("\n=== Constraint Check Summary ==="), file=stream)
     for name, ok, details in checks:
         tag = _c_ok("[OK]") if ok else _c_fail("[FAIL]")
-        print(f"{tag} {name}" + (f" → {details}" if details else ""), file=stream)
+        print(f"{tag} {name}" + (f" — {details}" if details else ""), file=stream)
 
     def preview(label, rows, limit=8):
         if not rows: return
@@ -967,39 +972,13 @@ def load_inputs_from_case(case_path: str):
 
     # Inline constants inside the case
     consts = case.get('constants', {}) or {}
-    
-    # CRITICAL: If constants are empty or missing, use DEFAULT_CONSTANTS
-    # This ensures solver always has proper configuration
-    if not consts or not isinstance(consts, dict):
-        logger = logging.getLogger("scheduler")
-        logger.warning("Case file missing or has empty 'constants' - using DEFAULT_CONSTANTS")
-        consts = json.loads(json.dumps(DEFAULT_CONSTANTS))  # Deep copy
-    else:
-        # Merge with defaults to fill any missing fields (but preserve case file values)
-        import copy
-        merged_consts = copy.deepcopy(DEFAULT_CONSTANTS)
-        
-        # Deep merge: case file constants override defaults
-        if 'solver' in consts:
-            merged_consts['solver'].update(consts['solver'])
-        if 'weights' in consts:
-            if 'hard' in consts['weights']:
-                merged_consts['weights']['hard'].update(consts['weights']['hard'])
-            if 'soft' in consts['weights']:
-                merged_consts['weights']['soft'].update(consts['weights']['soft'])
-        if 'objective' in consts:
-            merged_consts['objective'].update(consts['objective'])
-        
-        consts = merged_consts
 
     # Optional legacy pointer to external constants
     cpath = case.get('constants_path')
     if cpath and isinstance(cpath, str) and len(cpath) > 0:
         try:
             with open(cpath, 'r', encoding='utf-8') as g:
-                external_consts = json.load(g)
-                # External file takes precedence
-                consts = external_consts
+                consts = json.load(g)
         except Exception:
             pass  # ignore if not found
 
@@ -1131,6 +1110,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # Detect cluster ends: end_d = 1 iff y[i,d]==1 and (d==N-1 or y[i,d+1]==0)
     # Cluster length is runs[i][d_end]; we gate it into L_d and build L^3.
     cluster_cubesums = [model.NewIntVar(0, N**3, f"cluster_cubesum_{i}") for i in P]
+
     for i in P:
         cube_terms = []
         for d in D:
@@ -1166,21 +1146,33 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # 12 hrs apart
     for iter1 in S:
         for iter2 in S:
-            if(shifts[iter1]["id"] == shifts[iter2]["id"]): continue
-            s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
-            s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
-            e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            e2 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            
-            if(s1 > s2): continue
-            bad = 0
-            if(s2 <= e1): bad = 1
+            if shifts[iter1]["id"] == shifts[iter2]["id"]:
+                continue
 
-            diff = abs(dt.datetime.fromisoformat(shifts[iter2]["start"]) - dt.datetime.fromisoformat(shifts[iter1]["end"]))
-            if(bad or diff.total_seconds() < 12 * 60 * 60): 
+            # Remove timezone info for safe comparison
+            s1_str = shifts[iter1]["start"].replace('Z', '').split('+')[0]
+            s2_str = shifts[iter2]["start"].replace('Z', '').split('+')[0]
+            e1_str = shifts[iter1]["end"].replace('Z', '').split('+')[0]
+            
+            s1 = dt.datetime.fromisoformat(s1_str)
+            s2 = dt.datetime.fromisoformat(s2_str)
+            e1 = dt.datetime.fromisoformat(e1_str)
+
+            if s1 > s2:
+                continue
+            
+            # Check if shifts overlap or are less than 12 hours apart
+            is_too_close = False
+            if s2 < e1:  # Direct overlap
+                is_too_close = True
+            else:
+                diff = s2 - e1
+                if diff.total_seconds() < 12 * 3600:
+                    is_too_close = True
+
+            if is_too_close:
                 for j in P:
                     model.AddAtMostOne([x[iter1, j], x[iter2, j]])
-    
     # cant because type
     for s in S:
         for p in P:
@@ -1258,16 +1250,16 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     c_slack_consec = int(get_num(consts, 'weights', 'hard', 'slack_consec', default=1))
 
     U = model.NewIntVar(0, 10**18, "U")
-    model.Add(U ==
-              # c_slack_unfilled * sum(slack_unfilled)  # COMMENTED OUT: allow unfilled shifts for better balance
+    model.Add(U == 
+              # c_slack_unfilled * sum(slack_unfilled) 
               c_slack_shift_less * sum(slack_shift_less) 
               + c_slack_shift_more * sum(slack_shift_more) 
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
-    model.Minimize(U)
+    model.minimize(U)
 
-    # Phase-1 solve (hard slacks) → VERBOSE + callback into logger
+    # Phase-1 solve (hard slacks) — VERBOSE + callback into logger
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = float(120)
     solver.parameters.num_search_workers = 8
@@ -1288,7 +1280,6 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
 
     # slacks enforced
     # now we solve for soft constraints
-    # NOTE: slack_unfilled is NOT enforced, allowing Phase 2 to optimize shift filling
     for i in (slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
         model.Add(i == solver.Value(i))
 
@@ -1383,11 +1374,6 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
    # c_cluster_size = int(math.ceil((cclusters / c_cluster_size) ** 0.666))
     for i in P:
         model.Add(deviation[i] == less_sq[i] + more_sq[i])    
-    
-    # Total taken (number of filled shifts) - used to reward filling shifts in Phase 2
-    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
-    model.Add(total_taken == sum(x[i, j] for i in S for j in P))
-    
     # Weekend penalty (works Sat, not Sun)
     second_weekend = max(weekend_idx)
     count_horrible = [model.NewIntVar(0, nshifts, f'weekend_unclustered_{i}') for i in P]
@@ -1471,16 +1457,53 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             on_miss_terms.append(miss)
         model.Add(soft_on_i[i] == (sum(on_miss_terms) if on_miss_terms else 0))
 
-
-    model.Add(Weighted == cclusters * sum(cluster_square) +
-                            cunfair * sum(deviation) +
-                            c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
+    s = model.NewIntVar(0, nshifts + 5, "taken_shifts")
+    model.Add(s == sum(x[i, j] for i in S for j in P))
+    av_target = model.NewIntVar(0, 40, "avg_target")
+    deviations = model.NewIntVar(0, 5000, "deviation")
+    #model.Add(av_target * len(P) <= s)
+    #model.Add((av_target + 1) * len(P) >= s)
+    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
+    model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))))
+    model.AddDivisionEquality(av_target, total_taken, len(P))
+    personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
+    provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
+    for i in P:
+        model.Add(provider_taken[i] == sum([x[s, i] for s in S]))
+    constant_absolutely_horrible = 1000000000000000
+    absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
+    abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
+    absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    los = [model.NewIntVar(0, 50, "los%d" % j) for j in P]
+    for j in P:
+        lim = providers[j].get('limits', {}) or {}
+        mn = lim.get("min_total", 0)
+        mx = lim.get("max_total", 31)
+        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
+        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
+        model.AddMaxEquality(los[j], [mn, av_target])
+        model.AddMinEquality(personal_target[j], [los[j], mx])
+        model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
+        model.Add(deviations >= absvsq[j])
+    model.Add(deviations < 16)
+    within_diff = model.NewIntVar(0, 1000, "within_diff")
+    model.Add(within_diff == sum(absvsq))
+    model.Add(Weighted ==   cclusters * sum(cluster_square) +
+                            c_cluster_size * sum(cluster_cubesums) +   
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
-                            c_soft_off * sum(soft_off_i) -
-                            100000000000 * total_taken)  # Huge reward for filling shifts
+                            c_soft_off * sum(soft_off_i) - 
+                            100000000000 * total_taken + 
+                            ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
     print(count_horrible)
-    model.Minimize(Weighted)
+    model.minimize(Weighted)
+    global trashcan
+    for i in P:
+        trashcan.add(personal_target[i])
+        trashcan.add(provider_taken[i])
+    trashcan.add(av_target)
+    trashcan.add(deviations)
+
     # (Phase-2 solver is created in solve_two_phase)
     return dict(
         model=model,
@@ -1615,7 +1638,7 @@ def _hamming(a: tuple, b: tuple) -> int:
     return sum(1 for u, v in zip(a, b) if u != v)
 
 def _select_diverse_k(cb_pool, cb_vecs, K: int, L: int, *, sense='min', relax_to: int = 0):
-    """Greedy best-first by objective; keep solutions whose Hamming distance to all kept ÔëÑ L."""
+    """Greedy best-first by objective; keep solutions whose Hamming distance to all kept ≥ L."""
     idxs = list(range(len(cb_pool)))
     if sense == 'min':
         idxs.sort(key=lambda k: cb_pool[k][0])  # obj asc
@@ -1656,7 +1679,7 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         try: solver2.parameters.num_search_workers=int(sp['num_threads'])
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
-    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', 0.01))
+    try: solver2.parameters.relative_gap_limit = 0.0
     except: pass
     solver2.parameters.log_search_progress = True
     solver2.parameters.log_to_stdout = False    # Capture solver progress into unified log
@@ -1686,7 +1709,7 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
     logger.info("Phase-2 best objective=%s best bound=%s", solver2.ObjectiveValue(), solver2.BestObjectiveBound())
     logger.info("Pool collected=%d", len(cb.pool))
 
-    # Choose K diverse-best by Hamming ÔëÑ L (with relaxation)
+    # Choose K diverse-best by Hamming ≥ L (with relaxation)
     selected_idx = _select_diverse_k(cb.pool, cb.pool_vecs, K, L, sense='min', relax_to=0)
     tables = [cb.pool[k][1] for k in selected_idx]
     per_meta = [cb.pool[k][2] for k in selected_idx]
@@ -1735,7 +1758,7 @@ def write_excel_hospital_multi(path, tables):
     for idx, table in enumerate(tables, start=1):
         days=table['days']; providers=table['providers']; shifts=table['shifts']; assign=set(table['assignment'])
         ws=wb.create_sheet(f"Hospital_{idx}")
-        ws.append(['Date','Role','Code','Start','End','Assignee','ShiftID'])
+        ws.append(['Date','Role','Code','Start','End','Provider','ID'])
         for s,sh in enumerate(shifts):
             assignee='UNFILLED'
             for i in range(len(providers)):
@@ -1743,11 +1766,11 @@ def write_excel_hospital_multi(path, tables):
             role,code=(sh['type'].split('_',1)+[''])[:2] if '_' in sh['type'] else ('', sh['type'])
             ws.append([sh['date'], role, code, sh['start'], sh['end'], assignee, sh.get('id', f'S{s:04d}')])
     if not tables:
-        ws=wb.create_sheet("Hospital_1"); ws.append(['Date','Role','Code','Start','End','Assignee','ShiftID'])
+        ws=wb.create_sheet("Hospital_1"); ws.append(['Date','Role','Code','Start','End','Provider','ID'])
     global CHOSPITAL
     CHOSPITAL = path
     wb.save(path)
-
+    
 def write_excel_calendar_multi(path, tables):
     """
     New calendar export:
@@ -1944,9 +1967,6 @@ def compute_capacity_diag(case: Dict[str,Any]) -> List[Dict[str,Any]]:
 def Solve_test_case(case):
     # Pre-init timestamp so logs & files share the same run id
     ts=dt.datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    # Save case path for diagnosis later (before it gets reassigned to dict)
-    case_path = case
 
     # Lightweight run config probe (to derive out_dir for logger)
     try:
@@ -2012,26 +2032,9 @@ def Solve_test_case(case):
     write_excel_hospital_multi(hosp_path, tables)
     write_excel_calendar_multi(cal_path, tables)
 
-    # Save input case for reference
-    input_case_path = os.path.join(out_dir, 'input_case.json')
-    with open(input_case_path, 'w', encoding='utf-8') as f:
-        json.dump(case, f, indent=2)
-    logger.info("Wrote input case: %s", input_case_path)
-
-    # Save results.json
-    results_path = os.path.join(out_dir, 'results.json')
-    results_data = {
-        "timestamp": ts,
-        "solutions": tables,
-        "metadata": meta
-    }
-    with open(results_path, 'w', encoding='utf-8') as f:
-        json.dump(results_data, f, indent=2)
-    logger.info("Wrote results: %s", results_path)
-
     meta['run'] = {"timestamp": ts, "seed": seed, "out_dir": out_dir,
                    "files": {"grid": grid_path, "hospital": hosp_path, "calendar": cal_path,
-                             "capacity": caps_path, "input_case": input_case_path, "results": results_path}}
+                             "capacity": caps_path}}
     meta_path = os.path.join(out_dir, f'scheduler_log_{ts}.json')
     with open(meta_path,'w', encoding='utf-8') as f:
         json.dump(meta, f, indent=2)
@@ -2048,18 +2051,8 @@ def Solve_test_case(case):
     logger.info("Wrote calendar: %s", cal_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
-    
-    # Run diagnosis on hospital schedule (works in both local and Lambda)
-    if hosp_path and os.path.exists(hosp_path):
-        try:
-            logger.info("Running diagnosis on schedule: %s", hosp_path)
-            run_diag(case_path, hosp_path)
-        except Exception as e:
-            logger.error("Diagnosis failed: %s", str(e))
-    
+
     return tables, meta
-
-
 # ---------- Defaults ----------
 IDENTITY_MAX = 31  # "infinity" for limits and max_consecutive_days
 
@@ -2252,7 +2245,7 @@ class TestcaseGUI:
         filemenu.add_command(label="Exit", command=self.root.quit)
 
         toolsmenu = tk.Menu(menubar, tearoff=0)
-        toolsmenu.add_command(label="Randomly Perturb Case...", command=self.menu_perturb_case)
+        toolsmenu.add_command(label="Randomly Perturb Case…", command=self.menu_perturb_case)
 
         menubar.add_cascade(label="File", menu=filemenu)
         menubar.add_cascade(label="Tools", menu=toolsmenu)
@@ -2299,7 +2292,7 @@ class TestcaseGUI:
         ttk.Label(box, text="Output folder name").grid(row=0, column=0, sticky="w", padx=6, pady=3)
         self.ent_out = ttk.Entry(box, width=30)
         self.ent_out.grid(row=0, column=1, sticky="w", padx=6, pady=3)
-        ttk.Button(box, text="Open Output Folder...", command=self.open_out_folder).grid(row=0, column=2, padx=6)
+        ttk.Button(box, text="Open Output Folder…", command=self.open_out_folder).grid(row=0, column=2, padx=6)
 
         ttk.Label(box, text="k").grid(row=1, column=0, sticky="w", padx=6, pady=3)
         self.ent_r_k = ttk.Entry(box, width=8); self.ent_r_k.grid(row=1, column=1, sticky="w")
@@ -2900,11 +2893,11 @@ class TestcaseGUI:
         for d in p.get("forbidden_days_soft", []):
             lines.append(f"  - {d}")
         lines.append("")
-        lines.append("Fixed ON (date ÔåÆ types):")
+        lines.append("Fixed ON (date → types):")
         for d, L in sorted((p.get("preferred_days_hard") or {}).items()):
             lines.append(f"  - {d}: {', '.join(L) if L else '(none)'}")
         lines[-1] = lines[-1].replace("', '", "', '")
-        lines.append("Prefer ON (date ÔåÆ types):")
+        lines.append("Prefer ON (date → types):")
         for d, L in sorted((p.get("preferred_days_soft") or {}).items()):
             lines.append(f"  - {d}: {', '.join(L) if L else '(none)'}")
         self.txt_pref_summary.insert(tk.END, "\n".join(lines))
@@ -3014,7 +3007,7 @@ class TestcaseGUI:
         for lbl, ent, hint in [
             ("max_time_in_seconds", self.ent_s_time, "e.g., 350"),
             ("phase1_fraction", self.ent_s_phase, "e.g., 0.4"),
-            ("relative_gap", self.ent_s_gap, "e.g., 0.01"),
+            ("relative_gap", self.ent_s_gap, "e.g., 0.0"),
             ("num_threads", self.ent_s_threads, "e.g., 8"),
         ]:
             ttk.Label(sol, text=lbl).grid(row=row, column=0, sticky="w", padx=6, pady=3)
@@ -3247,9 +3240,8 @@ class TestcaseGUI:
 
     # ---------- Tools: Random Perturbation ----------
     def menu_perturb_case(self):
-        _ensure_tkinter_imported()  # Ensure all imports are available
-        PerturbDialogClass = _define_perturb_dialog()  # Get the deferred class
-        dlg = PerturbDialogClass(self.root, title="Randomly Perturb Case")
+        PerturbDialog = _get_perturb_dialog_class()
+        dlg = PerturbDialog(self.root, title="Randomly Perturb Case")
         if not getattr(dlg, "result", None):
             return
         r = dlg.result
@@ -3397,7 +3389,7 @@ class TestcaseGUI:
             os.fsync(f.fileno())  # make sure file is on disk before spawning
 
         self._log(f"=== RUN @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
-        self._log(f"[run] scheduler_sat.py ÔåÆ {odir}. k={r['k']}  L={r.get('L',0)}  time_min={r['time']}")
+        self._log(f"[run] scheduler_sat.py → {odir}. k={r['k']}  L={r.get('L',0)}  time_min={r['time']}")
 
         self.btn_run.configure(state="disabled")
         self.pb.start(12)
@@ -3425,10 +3417,10 @@ class TestcaseGUI:
             bufsize=1            # line-buffered
         )
 
-        # Pump the child's output on a background thread into our internal queue...
+        # Pump the child's output on a background thread into our internal queue…
         self._io_thread = threading.Thread(target=self._pump_proc_output, daemon=True)
         self._io_thread.start()
-        # ...and start draining that queue onto the Text widget from the Tk loop
+        # …and start draining that queue onto the Text widget from the Tk loop
         self._drain_log_queue()
 
     def cancel_solver(self):
@@ -3437,7 +3429,7 @@ class TestcaseGUI:
                 self._proc.terminate()
             except Exception:
                 pass
-            self._log("[run] cancel requested...")
+            self._log("[run] cancel requested…")
         else:
             self._warn_to_log("[no active run]")
 
@@ -3496,46 +3488,44 @@ class TestcaseGUI:
         self._log(msg, warn=True)
 
 # ---------- Perturb dialog ----------
-# Deferred class definition - defined only after tkinter import
-PerturbDialog = None
+# ---------- Perturb dialog (lazy definition) ----------
+def _get_perturb_dialog_class():
+    """Return PerturbDialog class, ensuring tkinter is imported first"""
+    if simpledialog is None:
+        raise ImportError("tkinter not available")
+    
+    class PerturbDialog(simpledialog.Dialog):
+        def body(self, master):
+            ttk.Label(master, text="Percent of providers to change (5–100)").grid(row=0, column=0, sticky="w")
+            self.var_p_prov = tk.IntVar(value=25)
+            self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
+            self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
 
-def _define_perturb_dialog():
-    """Define PerturbDialog class after tkinter imports are available"""
-    global PerturbDialog
-    if PerturbDialog is None:
-        class PerturbDialog_impl(simpledialog.Dialog):
-            def body(self, master):
-                ttk.Label(master, text="Percent of providers to change (5–100)").grid(row=0, column=0, sticky="w")
-                self.var_p_prov = tk.IntVar(value=25)
-                self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
-                self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
+            ttk.Label(master, text="Percent of shifts to change (5–100)").grid(row=1, column=0, sticky="w")
+            self.var_p_shift = tk.IntVar(value=25)
+            self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
+            self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
 
-                ttk.Label(master, text="Percent of shifts to change (5–100)").grid(row=1, column=0, sticky="w")
-                self.var_p_shift = tk.IntVar(value=25)
-                self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
-                self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
+            ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
+            self.entry_seed = ttk.Entry(master, width=16)
+            self.entry_seed.grid(row=2, column=1, sticky="w")
 
-                ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
-                self.entry_seed = ttk.Entry(master, width=16)
-                self.entry_seed.grid(row=2, column=1, sticky="w")
+            self.var_tweak_weekend = tk.BooleanVar(value=True)
+            ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
+                .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
 
-                self.var_tweak_weekend = tk.BooleanVar(value=True)
-                ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
-                    .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
+            master.grid_columnconfigure(1, weight=1)
+            return self.entry_seed
 
-                master.grid_columnconfigure(1, weight=1)
-                return self.entry_seed
-
-            def apply(self):
-                seed_text = self.entry_seed.get().strip()
-                self.result = {
-                    "pct_providers": max(5, min(100, self.var_p_prov.get())),
-                    "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
-                    "seed":          None if seed_text == "" else seed_text,
-                    "tweak_weekend": self.var_tweak_weekend.get(),
-                }
-        
-        PerturbDialog = PerturbDialog_impl
+        def apply(self):
+            seed_text = self.entry_seed.get().strip()
+            self.result = {
+                "pct_providers": max(5, min(100, self.var_p_prov.get())),
+                "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
+                "seed":          None if seed_text == "" else seed_text,
+                "tweak_weekend": self.var_tweak_weekend.get(),
+            }
+    
     return PerturbDialog
 
 # ---------- solver-child entry (no Tk) ----------
@@ -3549,20 +3539,19 @@ def _solver_child_main(argv):
         sys.exit(2)
 
     # Run the solver (this sets up logging redirection inside the child)
-    tables, meta = Solve_test_case(case_path)
-    
-    # Determine hospital schedule path from meta
-    hosp_path = meta.get('run', {}).get('files', {}).get('hospital')
-    
-    if hosp_path and os.path.exists(hosp_path):
-        print(f"[solver-child] Running diagnosis on: {hosp_path}")
-        run_diag(case_path, hosp_path)
-    else:
-        print(f"[solver-child] Hospital schedule not found: {hosp_path}")
+    Solve_test_case(case_path)
+    global CHOSPITAL
+
+
+
+
+    print(case_path, CHOSPITAL)
+
+    run_diag(case_path, CHOSPITAL)
 
 # ---------- main ----------
 def main():
-    _ensure_tkinter_imported()  # Ensure tkinter is available before creating GUI
+    _ensure_tkinter_imported()
     root = tk.Tk()
     gui = TestcaseGUI(root)
     root.minsize(1200, 800)
