@@ -1371,26 +1371,16 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # Constraint: maximum deviation from personal target
     deviations = model.NewIntVar(0, 5000, "deviation")
     
-    # Calculate personal_target for each provider (AFTER provider_taken is constrained)
+    # Calculate personal_target for each provider
     for j in P:
         lim = providers[j].get('limits', {}) or {}
         mn = lim.get("min_total", 0)
         mx = lim.get("max_total", 31)
-        
-        # personal_target[j] = min(max(mn, av_target), mx)
+        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
+        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
         model.AddMaxEquality(los[j], [mn, av_target])
         model.AddMinEquality(personal_target[j], [los[j], mx])
-        
-        # absv[j] = |personal_target[j] - provider_taken[j]|
-        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
-        
-        # abst[j] = |personal_target[j] - av_target|
-        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
-        
-        # absvsq[j] = absv[j]^2
         model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
-        
-        # Constrain: track max squared deviation
         model.Add(deviations >= absvsq[j])
     
     # Maximum squared deviation is 16 (i.e., 4 shifts)
