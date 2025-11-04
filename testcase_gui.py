@@ -1257,7 +1257,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
-    model.minimize(U)
+    model.Minimize(U)
 
     # Phase-1 solve (hard slacks) — VERBOSE + callback into logger
     solver = cp_model.CpSolver()
@@ -1496,7 +1496,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
                             100000000000 * total_taken + 
                             ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
     print(count_horrible)
-    model.minimize(Weighted)
+    model.Minimize(Weighted)
     global trashcan
     for i in P:
         trashcan.add(personal_target[i])
