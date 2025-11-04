@@ -2028,13 +2028,33 @@ def Solve_test_case(case):
     grid_path=os.path.join(out_dir, f'schedules.xlsx')
     hosp_path=os.path.join(out_dir, f'hospital_schedule.xlsx')
     cal_path=os.path.join(out_dir, f'calendar.xlsx')
+    sched_path=os.path.join(out_dir, f'schedule.xlsx')  # single-sheet backup
     write_excel_grid_multi(grid_path, tables)
     write_excel_hospital_multi(hosp_path, tables)
     write_excel_calendar_multi(cal_path, tables)
+    if tables:
+        write_excel_hospital(sched_path, tables[0])  # first solution only for schedule.xlsx
+
+    # Save input case for reference
+    input_case_path = os.path.join(out_dir, 'input_case.json')
+    with open(input_case_path, 'w', encoding='utf-8') as f:
+        json.dump(case, f, indent=2)
+    logger.info("Wrote input case: %s", input_case_path)
+
+    # Save results.json
+    results_path = os.path.join(out_dir, 'results.json')
+    results_data = {
+        "timestamp": ts,
+        "solutions": tables,
+        "metadata": meta
+    }
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(results_data, f, indent=2)
+    logger.info("Wrote results: %s", results_path)
 
     meta['run'] = {"timestamp": ts, "seed": seed, "out_dir": out_dir,
                    "files": {"grid": grid_path, "hospital": hosp_path, "calendar": cal_path,
-                             "capacity": caps_path}}
+                             "capacity": caps_path, "input_case": input_case_path, "results": results_path}}
     meta_path = os.path.join(out_dir, f'scheduler_log_{ts}.json')
     with open(meta_path,'w', encoding='utf-8') as f:
         json.dump(meta, f, indent=2)
@@ -2043,14 +2063,24 @@ def Solve_test_case(case):
     print("Wrote:", grid_path)
     print("Wrote:", hosp_path)
     print("Wrote:", cal_path)
+    print("Wrote:", sched_path)
     print("Wrote:", os.path.join(out_dir,'eligibility_capacity.json'))
 
     # Additional logging
     logger.info("Wrote grid: %s", grid_path)
     logger.info("Wrote hospital: %s", hosp_path)
     logger.info("Wrote calendar: %s", cal_path)
+    logger.info("Wrote schedule: %s", sched_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
+    
+    # Run diagnosis on hospital schedule (works in both local and Lambda)
+    if hosp_path and os.path.exists(hosp_path):
+        try:
+            logger.info("Running diagnosis on schedule: %s", hosp_path)
+            run_diag(case_path, hosp_path)
+        except Exception as e:
+            logger.error("Diagnosis failed: %s", str(e))
 
     return tables, meta
 # ---------- Defaults ----------
