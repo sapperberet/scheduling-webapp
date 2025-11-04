@@ -14,6 +14,10 @@ Scheduler Testcase Builder GUI
   * Providers now uses two panes: self.lst_days_off and self.lst_days_on
 - Clear prefs on selected days works and updates summary/log.
 - Color-coded OFF/ON day lists with legends.
+
+HYBRID VERSION:
+- Uses OLD solver logic (produces 266 assignments to match original behavior)
+- Has Lambda-safe tkinter import wrapper
 """
 from __future__ import annotations
 
@@ -26,8 +30,28 @@ import queue
 import random
 from pathlib import Path
 from datetime import date, timedelta, datetime
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+
+# Defer tkinter imports - only loaded if GUI is actually used (not in Lambda)
+tk = None
+ttk = None
+filedialog = None
+messagebox = None
+simpledialog = None
+
+def _ensure_tkinter_imported():
+    """Import tkinter only when needed (e.g., when running GUI, not in Lambda)"""
+    global tk, ttk, filedialog, messagebox, simpledialog
+    if tk is None:
+        try:
+            import tkinter as tk_module
+            from tkinter import ttk as ttk_module, filedialog as filedialog_module, messagebox as messagebox_module, simpledialog as simpledialog_module
+            tk = tk_module
+            ttk = ttk_module
+            filedialog = filedialog_module
+            messagebox = messagebox_module
+            simpledialog = simpledialog_module
+        except ImportError:
+            raise ImportError("tkinter not available - GUI features disabled. For headless solving, use Solve_test_case() directly.")
 
 import argparse, json, os, re, sys, subprocess, traceback
 import datetime as dt
@@ -41,6 +65,7 @@ from ortools.sat.python import cp_model
 from openpyxl import Workbook
 CHOSPITAL = ""
 SCALE = 1
+trashcan = set()
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -206,7 +231,7 @@ def _load_schedules_from_xlsx(path: str):
         lower = [h.lower() for h in header]
         c_shift, c_prov = _find_candidate_columns(lower)
         if c_shift is None or c_prov is None:
-            continue
+            continue 
 
         # read rows
         first = True
@@ -1085,6 +1110,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # Detect cluster ends: end_d = 1 iff y[i,d]==1 and (d==N-1 or y[i,d+1]==0)
     # Cluster length is runs[i][d_end]; we gate it into L_d and build L^3.
     cluster_cubesums = [model.NewIntVar(0, N**3, f"cluster_cubesum_{i}") for i in P]
+
     for i in P:
         cube_terms = []
         for d in D:
@@ -1120,21 +1146,33 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     # 12 hrs apart
     for iter1 in S:
         for iter2 in S:
-            if(shifts[iter1]["id"] == shifts[iter2]["id"]): continue
-            s1 = dt.datetime.fromisoformat(shifts[iter1]["start"])
-            s2 = dt.datetime.fromisoformat(shifts[iter2]["start"])
-            e1 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            e2 = dt.datetime.fromisoformat(shifts[iter1]["end"])
-            
-            if(s1 > s2): continue
-            bad = 0
-            if(s2 <= e1): bad = 1
+            if shifts[iter1]["id"] == shifts[iter2]["id"]:
+                continue
 
-            diff = abs(dt.datetime.fromisoformat(shifts[iter2]["start"]) - dt.datetime.fromisoformat(shifts[iter1]["end"]))
-            if(bad or diff.total_seconds() < 12 * 60 * 60): 
+            # Remove timezone info for safe comparison
+            s1_str = shifts[iter1]["start"].replace('Z', '').split('+')[0]
+            s2_str = shifts[iter2]["start"].replace('Z', '').split('+')[0]
+            e1_str = shifts[iter1]["end"].replace('Z', '').split('+')[0]
+            
+            s1 = dt.datetime.fromisoformat(s1_str)
+            s2 = dt.datetime.fromisoformat(s2_str)
+            e1 = dt.datetime.fromisoformat(e1_str)
+
+            if s1 > s2:
+                continue
+            
+            # Check if shifts overlap or are less than 12 hours apart
+            is_too_close = False
+            if s2 < e1:  # Direct overlap
+                is_too_close = True
+            else:
+                diff = s2 - e1
+                if diff.total_seconds() < 12 * 3600:
+                    is_too_close = True
+
+            if is_too_close:
                 for j in P:
                     model.AddAtMostOne([x[iter1, j], x[iter2, j]])
-    
     # cant because type
     for s in S:
         for p in P:
@@ -1212,8 +1250,8 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     c_slack_consec = int(get_num(consts, 'weights', 'hard', 'slack_consec', default=1))
 
     U = model.NewIntVar(0, 10**18, "U")
-    model.Add(U ==
-              # c_slack_unfilled * sum(slack_unfilled)  # COMMENTED OUT: allow unfilled shifts for better balance
+    model.Add(U == 
+              # c_slack_unfilled * sum(slack_unfilled) 
               c_slack_shift_less * sum(slack_shift_less) 
               + c_slack_shift_more * sum(slack_shift_more) 
               + c_slack_cant_work * sum(slack_cant_work) 
@@ -1242,7 +1280,6 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
 
     # slacks enforced
     # now we solve for soft constraints
-    # NOTE: slack_unfilled is NOT enforced, allowing Phase 2 to optimize shift filling
     for i in (slack_shift_less + slack_shift_more + slack_cant_work + slack_consec + slack_hard_on):
         model.Add(i == solver.Value(i))
 
@@ -1336,61 +1373,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     import math
    # c_cluster_size = int(math.ceil((cclusters / c_cluster_size) ** 0.666))
     for i in P:
-        model.Add(deviation[i] == less_sq[i] + more_sq[i])
-    
-    # OLD CODE FAIRNESS CALCULATION (matching testcase_gui_old.py)
-    # Redundant variable s (for old code compatibility)
-    s = model.NewIntVar(0, nshifts + 5, "taken_shifts")
-    model.Add(s == sum(x[i, j] for i in S for j in P))
-    
-    # Calculate average target per provider
-    av_target = model.NewIntVar(0, 40, "avg_target")
-    
-    # Total taken (number of filled shifts) - used to reward filling shifts in Phase 2
-    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
-    model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))])
-    model.AddDivisionEquality(av_target, total_taken, len(P))
-    #model.Add(av_target * len(P) <= s)
-    #model.Add((av_target + 1) * len(P) >= s)
-    
-    # Personal target for each provider based on their limits
-    personal_target = [model.NewIntVar(0, 40, f"personal_target_{j}") for j in P]
-    provider_taken = [model.NewIntVar(0, 40, f"provider_taken_{j}") for j in P]
-    
-    # CRITICAL: provider_taken constraints must be OUTSIDE the fairness loop
-    # (matching old code structure exactly)
-    for i in P:
-        model.Add(provider_taken[i] == sum(x[s, i] for s in S))
-    
-    # Auxiliary variables for fairness calculation
-    absv = [model.NewIntVar(0, 40, f"absv{j}") for j in P]
-    abst = [model.NewIntVar(0, 40, f"abst{j}") for j in P]
-    absvsq = [model.NewIntVar(0, 1600, f"abstsq{j}") for j in P]
-    los = [model.NewIntVar(0, 50, f"los{j}") for j in P]
-    
-    # Constraint: maximum deviation from personal target
-    deviations = model.NewIntVar(0, 5000, "deviation")
-    
-    # Calculate personal_target for each provider
-    for j in P:
-        lim = providers[j].get('limits', {}) or {}
-        mn = lim.get("min_total", 0)
-        mx = lim.get("max_total", 31)
-        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
-        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
-        model.AddMaxEquality(los[j], [mn, av_target])
-        model.AddMinEquality(personal_target[j], [los[j], mx])
-        model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
-        model.Add(deviations >= absvsq[j])
-    
-    # Maximum squared deviation is 16 (i.e., 4 shifts)
-    model.Add(deviations < 16)
-    
-    # within_diff = sum of squared deviations from personal targets
-    within_diff = model.NewIntVar(0, 1000, "within_diff")
-    model.Add(within_diff == sum(absvsq))
-
-    
+        model.Add(deviation[i] == less_sq[i] + more_sq[i])    
     # Weekend penalty (works Sat, not Sun)
     second_weekend = max(weekend_idx)
     count_horrible = [model.NewIntVar(0, nshifts, f'weekend_unclustered_{i}') for i in P]
@@ -1474,16 +1457,53 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
             on_miss_terms.append(miss)
         model.Add(soft_on_i[i] == (sum(on_miss_terms) if on_miss_terms else 0))
 
-
-    model.Add(Weighted == cclusters * sum(cluster_square) +
-                            c_cluster_size * sum(cluster_cubesums) +   # <<< NEW TERM
+    s = model.NewIntVar(0, nshifts + 5, "taken_shifts")
+    model.Add(s == sum(x[i, j] for i in S for j in P))
+    av_target = model.NewIntVar(0, 40, "avg_target")
+    deviations = model.NewIntVar(0, 5000, "deviation")
+    #model.Add(av_target * len(P) <= s)
+    #model.Add((av_target + 1) * len(P) >= s)
+    total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
+    model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))))
+    model.AddDivisionEquality(av_target, total_taken, len(P))
+    personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
+    provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
+    for i in P:
+        model.Add(provider_taken[i] == sum([x[s, i] for s in S]))
+    constant_absolutely_horrible = 1000000000000000
+    absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
+    abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
+    absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    los = [model.NewIntVar(0, 50, "los%d" % j) for j in P]
+    for j in P:
+        lim = providers[j].get('limits', {}) or {}
+        mn = lim.get("min_total", 0)
+        mx = lim.get("max_total", 31)
+        model.AddAbsEquality(absv[j], personal_target[j] - provider_taken[j])
+        model.AddAbsEquality(abst[j], personal_target[j] - av_target)
+        model.AddMaxEquality(los[j], [mn, av_target])
+        model.AddMinEquality(personal_target[j], [los[j], mx])
+        model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
+        model.Add(deviations >= absvsq[j])
+    model.Add(deviations < 16)
+    within_diff = model.NewIntVar(0, 1000, "within_diff")
+    model.Add(within_diff == sum(absvsq))
+    model.Add(Weighted ==   cclusters * sum(cluster_square) +
+                            c_cluster_size * sum(cluster_cubesums) +   
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
-                            c_soft_off * sum(soft_off_i) -
-                            100000000000 * total_taken +  # Huge reward for filling shifts
-                            ((c_soft_on + c_soft_off + 2) // 10 + 1) * within_diff)  # OLD CODE: ~2,000,001 * within_diff
+                            c_soft_off * sum(soft_off_i) - 
+                            100000000000 * total_taken + 
+                            ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
     print(count_horrible)
     model.minimize(Weighted)
+    global trashcan
+    for i in P:
+        trashcan.add(personal_target[i])
+        trashcan.add(provider_taken[i])
+    trashcan.add(av_target)
+    trashcan.add(deviations)
+
     # (Phase-2 solver is created in solve_two_phase)
     return dict(
         model=model,
@@ -1659,7 +1679,7 @@ def solve_two_phase(consts, case, ctx, K, seed=None):
         try: solver2.parameters.num_search_workers=int(sp['num_threads'])
         except: pass
     solver2.parameters.max_time_in_seconds = float(t2)
-    try: solver2.parameters.relative_gap_limit = float(sp.get('relative_gap', 0.01))
+    try: solver2.parameters.relative_gap_limit = 0.0
     except: pass
     solver2.parameters.log_search_progress = True
     solver2.parameters.log_to_stdout = False    # Capture solver progress into unified log
@@ -1738,7 +1758,7 @@ def write_excel_hospital_multi(path, tables):
     for idx, table in enumerate(tables, start=1):
         days=table['days']; providers=table['providers']; shifts=table['shifts']; assign=set(table['assignment'])
         ws=wb.create_sheet(f"Hospital_{idx}")
-        ws.append(['Date','Role','Code','Start','End','Assignee','ShiftID'])
+        ws.append(['Date','Role','Code','Start','End','Provider','ID'])
         for s,sh in enumerate(shifts):
             assignee='UNFILLED'
             for i in range(len(providers)):
@@ -1746,11 +1766,11 @@ def write_excel_hospital_multi(path, tables):
             role,code=(sh['type'].split('_',1)+[''])[:2] if '_' in sh['type'] else ('', sh['type'])
             ws.append([sh['date'], role, code, sh['start'], sh['end'], assignee, sh.get('id', f'S{s:04d}')])
     if not tables:
-        ws=wb.create_sheet("Hospital_1"); ws.append(['Date','Role','Code','Start','End','Assignee','ShiftID'])
+        ws=wb.create_sheet("Hospital_1"); ws.append(['Date','Role','Code','Start','End','Provider','ID'])
     global CHOSPITAL
     CHOSPITAL = path
     wb.save(path)
-
+    
 def write_excel_calendar_multi(path, tables):
     """
     New calendar export:
@@ -2031,10 +2051,8 @@ def Solve_test_case(case):
     logger.info("Wrote calendar: %s", cal_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
-    
+
     return tables, meta
-
-
 # ---------- Defaults ----------
 IDENTITY_MAX = 31  # "infinity" for limits and max_consecutive_days
 
@@ -2042,7 +2060,7 @@ DEFAULT_CONSTANTS = {
     "solver": {
         "max_time_in_seconds": 1000,
         "phase1_fraction": 0.4,
-        "relative_gap": 0.00001,
+        "relative_gap": 0.0,
         "num_threads": 8,
     },
     "weights": {
@@ -2054,11 +2072,11 @@ DEFAULT_CONSTANTS = {
             "slack_consec": 1,
         },  # could contain slack_name: BIG_WEIGHT to enforce as hard
         "soft": {
-            "cluster": 10000,
+            "cluster": 1000,
             "cluster_size": 1,  # default requested
-            "requested_off": 10000000,
-            "days_wanted_not_met": 10000000,
-            "cluster_weekend_start": 10000000,
+            "requested_off": 1000000,
+            "days_wanted_not_met": 1000000,
+            "cluster_weekend_start": 1000000,
             "unfair_number": 5000
         },
     },
@@ -2989,7 +3007,7 @@ class TestcaseGUI:
         for lbl, ent, hint in [
             ("max_time_in_seconds", self.ent_s_time, "e.g., 350"),
             ("phase1_fraction", self.ent_s_phase, "e.g., 0.4"),
-            ("relative_gap", self.ent_s_gap, "e.g., 0.01"),
+            ("relative_gap", self.ent_s_gap, "e.g., 0.0"),
             ("num_threads", self.ent_s_threads, "e.g., 8"),
         ]:
             ttk.Label(sol, text=lbl).grid(row=row, column=0, sticky="w", padx=6, pady=3)
@@ -3222,6 +3240,7 @@ class TestcaseGUI:
 
     # ---------- Tools: Random Perturbation ----------
     def menu_perturb_case(self):
+        PerturbDialog = _get_perturb_dialog_class()
         dlg = PerturbDialog(self.root, title="Randomly Perturb Case")
         if not getattr(dlg, "result", None):
             return
@@ -3469,37 +3488,45 @@ class TestcaseGUI:
         self._log(msg, warn=True)
 
 # ---------- Perturb dialog ----------
-class PerturbDialog(simpledialog.Dialog):
-    def body(self, master):
-        ttk.Label(master, text="Percent of providers to change (5–100)").grid(row=0, column=0, sticky="w")
-        self.var_p_prov = tk.IntVar(value=25)
-        self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
-        self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
+# ---------- Perturb dialog (lazy definition) ----------
+def _get_perturb_dialog_class():
+    """Return PerturbDialog class, ensuring tkinter is imported first"""
+    if simpledialog is None:
+        raise ImportError("tkinter not available")
+    
+    class PerturbDialog(simpledialog.Dialog):
+        def body(self, master):
+            ttk.Label(master, text="Percent of providers to change (5–100)").grid(row=0, column=0, sticky="w")
+            self.var_p_prov = tk.IntVar(value=25)
+            self.scale_prov = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_prov)
+            self.scale_prov.grid(row=0, column=1, sticky="ew", padx=6)
 
-        ttk.Label(master, text="Percent of shifts to change (5–100)").grid(row=1, column=0, sticky="w")
-        self.var_p_shift = tk.IntVar(value=25)
-        self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
-        self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
+            ttk.Label(master, text="Percent of shifts to change (5–100)").grid(row=1, column=0, sticky="w")
+            self.var_p_shift = tk.IntVar(value=25)
+            self.scale_shift = tk.Scale(master, from_=5, to=100, orient="horizontal", variable=self.var_p_shift)
+            self.scale_shift.grid(row=1, column=1, sticky="ew", padx=6)
 
-        ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
-        self.entry_seed = ttk.Entry(master, width=16)
-        self.entry_seed.grid(row=2, column=1, sticky="w")
+            ttk.Label(master, text="Random seed (optional)").grid(row=2, column=0, sticky="w")
+            self.entry_seed = ttk.Entry(master, width=16)
+            self.entry_seed.grid(row=2, column=1, sticky="w")
 
-        self.var_tweak_weekend = tk.BooleanVar(value=True)
-        ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
-            .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
+            self.var_tweak_weekend = tk.BooleanVar(value=True)
+            ttk.Checkbutton(master, text="Allow tweaking weekend days", variable=self.var_tweak_weekend)\
+                .grid(row=3, column=0, columnspan=2, sticky="w", pady=(6,0))
 
-        master.grid_columnconfigure(1, weight=1)
-        return self.entry_seed
+            master.grid_columnconfigure(1, weight=1)
+            return self.entry_seed
 
-    def apply(self):
-        seed_text = self.entry_seed.get().strip()
-        self.result = {
-            "pct_providers": max(5, min(100, self.var_p_prov.get())),
-            "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
-            "seed":          None if seed_text == "" else seed_text,
-            "tweak_weekend": self.var_tweak_weekend.get(),
-        }
+        def apply(self):
+            seed_text = self.entry_seed.get().strip()
+            self.result = {
+                "pct_providers": max(5, min(100, self.var_p_prov.get())),
+                "pct_shifts":    max(5, min(100, self.var_p_shift.get())),
+                "seed":          None if seed_text == "" else seed_text,
+                "tweak_weekend": self.var_tweak_weekend.get(),
+            }
+    
+    return PerturbDialog
 
 # ---------- solver-child entry (no Tk) ----------
 def _solver_child_main(argv):
@@ -3524,6 +3551,7 @@ def _solver_child_main(argv):
 
 # ---------- main ----------
 def main():
+    _ensure_tkinter_imported()
     root = tk.Tk()
     gui = TestcaseGUI(root)
     root.minsize(1200, 800)
