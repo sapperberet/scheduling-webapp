@@ -2070,15 +2070,16 @@ def Solve_test_case(case):
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
     
     # Run diagnosis on hospital schedule (works in both local and Lambda)
-    # Note: We need to pass the original case file path, not the loaded case data
-    # So we'll reconstruct or use a saved temporary case file
-    if hosp_path and os.path.exists(hosp_path):
+    # Only run if we have solutions - diagnosis fails on empty schedules
+    if tables and len(tables) > 0 and hosp_path and os.path.exists(hosp_path):
         try:
             logger.info("Running diagnosis on schedule: %s", hosp_path)
             # Use the input_case.json we just saved as the case file for diagnosis
             run_diag(input_case_path, hosp_path)
         except Exception as e:
             logger.error("Diagnosis failed: %s", str(e))
+    elif not tables:
+        logger.info("Skipping diagnosis: no solutions generated (Phase 2 was infeasible)")
 
     return tables, meta
 # ---------- Defaults ----------
