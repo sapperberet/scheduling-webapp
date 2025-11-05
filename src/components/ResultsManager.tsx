@@ -71,11 +71,14 @@ export default function ResultsManager({ isOpen, onClose }: ResultsManagerProps)
       
       // For each folder, use the metadata we have from Lambda
       const lambdaFolders = (data.folders || []).map((folder: { name?: string; created?: string; solver_type?: string; solutions_count?: number; file_count?: number; total_size?: number; runtime_seconds?: number }) => {
+        // Ensure created timestamp is properly parsed from the API
+        const createdTimestamp = folder.created ? new Date(folder.created).toISOString() : new Date().toISOString();
+        
         return {
           name: folder.name || '',
           fileCount: folder.file_count || 0,
           size: folder.total_size || 0,
-          created: folder.created || new Date().toISOString(),
+          created: createdTimestamp,
           storage: 'aws_s3' as const,
           solutions: folder.solutions_count || 0,
           solver_type: folder.solver_type || 'aws_lambda',

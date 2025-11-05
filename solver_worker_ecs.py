@@ -320,7 +320,8 @@ def process_solver_job(message_body: Dict[str, Any]):
                 'run_id': run_id,
                 'runtime_seconds': elapsed,
                 'solutions_count': len(tables),
-                'timestamp': datetime.utcnow().isoformat(),
+                'created_at': datetime.utcnow().isoformat(),
+                'solver_type': 'aws_ecs',
                 'solver_metadata': meta
             }
             

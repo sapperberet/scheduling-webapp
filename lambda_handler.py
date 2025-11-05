@@ -670,14 +670,37 @@ async def list_result_folders():
                 })
             except Exception as e:
                 logger.warning(f"[WARN] Error getting info for {folder_name}: {e}")
-                folders.append({
-                    'name': folder_name,
-                    'created': datetime.utcnow().isoformat(),
-                    'solver_type': 'aws_lambda',
-                    'solutions_count': 0,
-                    'file_count': 0,
-                    'total_size': 0
-                })
+                
+                # If metadata.json not found, try to get S3 object creation time from the earliest file
+                try:
+                    files_response = s3_client.list_objects_v2(
+                        Bucket=S3_BUCKET,
+                        Prefix=f"{folder_name}/"
+                    )
+                    earliest_time = datetime.utcnow().isoformat()
+                    if files_response.get('Contents'):
+                        # Find the earliest LastModified time (likely the metadata.json or first uploaded file)
+                        times = [obj['LastModified'].isoformat() for obj in files_response['Contents']]
+                        earliest_time = min(times) if times else datetime.utcnow().isoformat()
+                    
+                    folders.append({
+                        'name': folder_name,
+                        'created': earliest_time,  # Use earliest S3 object time instead of current time
+                        'solver_type': 'aws_lambda',
+                        'solutions_count': 0,
+                        'file_count': 0,
+                        'total_size': 0
+                    })
+                except Exception as fallback_error:
+                    logger.error(f"[ERROR] Fallback also failed for {folder_name}: {fallback_error}")
+                    folders.append({
+                        'name': folder_name,
+                        'created': datetime.utcnow().isoformat(),
+                        'solver_type': 'aws_lambda',
+                        'solutions_count': 0,
+                        'file_count': 0,
+                        'total_size': 0
+                    })
         
         folders.sort(key=lambda x: x['name'], reverse=True)
         return {"folders": folders}

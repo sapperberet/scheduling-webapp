@@ -126,6 +126,29 @@ def upload_results_to_s3(run_id: str, tables: List[Dict], metadata: Dict[str, An
                     continue
         
         logger.info(f"[S3] Completed upload to {folder_name} - {file_count} files ({total_size} bytes)")
+        
+        # Upload metadata.json with timestamp and solver info
+        metadata_to_store = {
+            'run_id': run_id,
+            'created_at': datetime.utcnow().isoformat(),
+            'solver_type': 'aws_lambda_worker',
+            'solutions_count': len(tables),
+            'file_count': file_count,
+            'total_size': total_size,
+            'runtime_seconds': metadata.get('runtime_seconds', 0),
+            'folder_name': folder_name,
+            'result_number': result_num
+        }
+        
+        metadata_key = f"{folder_name}/metadata.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(metadata_to_store, indent=2),
+            ContentType='application/json'
+        )
+        
+        logger.info(f"[S3] Uploaded metadata to {metadata_key}")
         return folder_name
         
     except Exception as e:
