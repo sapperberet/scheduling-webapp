@@ -191,6 +191,27 @@ def upload_results_to_s3(run_id: str, solver_output_dir: str, metadata: Dict[str
         logger.info(f"Uploading results to S3: {folder_name}")
         logger.info(f"Source directory: {solver_output_dir}")
         
+        # FIRST: Upload metadata immediately with exact creation timestamp
+        # This ensures metadata.json has the earliest LastModified time
+        creation_timestamp = datetime.utcnow().isoformat()
+        complete_metadata = {
+            **metadata,
+            'created_at': creation_timestamp,
+            'folder_name': folder_name,
+            'result_number': result_num,
+            'upload_start_time': creation_timestamp
+        }
+        
+        metadata_key = f"{folder_name}/metadata.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(complete_metadata, indent=2),
+            ContentType='application/json'
+        )
+        logger.info(f"Created metadata for {folder_name} at {creation_timestamp}")
+        
+        # SECOND: Upload all result files
         if not os.path.exists(solver_output_dir):
             logger.error(f"Output directory not found: {solver_output_dir}")
             return folder_name
@@ -214,15 +235,6 @@ def upload_results_to_s3(run_id: str, solver_output_dir: str, metadata: Dict[str
                 logger.info(f"Uploaded: {s3_key}")
             except Exception as upload_error:
                 logger.error(f"Failed to upload {relative_path}: {upload_error}")
-        
-        # Upload metadata
-        metadata_key = f"{folder_name}/metadata.json"
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=metadata_key,
-            Body=json.dumps(metadata, indent=2),
-            ContentType='application/json'
-        )
         
         logger.info(f"Successfully uploaded all results to {folder_name}")
         return folder_name

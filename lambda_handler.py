@@ -123,7 +123,29 @@ def upload_results_to_s3(run_id: str, result_data: Dict[str, Any], output_dir: s
         result_num = get_next_result_number()
         folder_name = f"result_{result_num}"
         
-        # Upload all files from output directory
+        # FIRST: Upload metadata.json with EXACT timestamp of result creation
+        # This ensures metadata has the earliest LastModified time in the folder
+        creation_timestamp = datetime.utcnow().isoformat()
+        metadata = {
+            'run_id': run_id,
+            'created_at': creation_timestamp,
+            'solver_type': 'aws_lambda',
+            'solutions_count': len(result_data.get('solutions', [])),
+            'folder_name': folder_name,
+            'result_number': result_num,
+            'upload_timestamp': creation_timestamp
+        }
+        
+        metadata_key = f"{folder_name}/metadata.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(metadata, indent=2),
+            ContentType='application/json'
+        )
+        logger.info(f"[S3] Created metadata for {folder_name} at {creation_timestamp}")
+        
+        # SECOND: Upload all result files from output directory
         import os
         import glob
         
@@ -154,24 +176,6 @@ def upload_results_to_s3(run_id: str, result_data: Dict[str, Any], output_dir: s
                         ContentType=content_type
                     )
                     logger.info(f"[S3] Uploaded {file_name} to {s3_key}")
-        
-        # Upload metadata.json with summary
-        metadata = {
-            'run_id': run_id,
-            'created_at': datetime.utcnow().isoformat(),
-            'solver_type': 'aws_lambda',
-            'solutions_count': len(result_data.get('solutions', [])),
-            'folder_name': folder_name,
-            'result_number': result_num
-        }
-        
-        metadata_key = f"{folder_name}/metadata.json"
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=metadata_key,
-            Body=json.dumps(metadata, indent=2),
-            ContentType='application/json'
-        )
         
         logger.info(f"[S3] Uploaded results to S3: {folder_name}")
         return folder_name

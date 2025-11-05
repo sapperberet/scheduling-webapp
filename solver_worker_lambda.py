@@ -79,6 +79,30 @@ def upload_results_to_s3(run_id: str, tables: List[Dict], metadata: Dict[str, An
         logger.info(f"[S3] Uploading results to {folder_name}")
         logger.info(f"[S3] Source directory: {solver_output_dir}")
         
+        # FIRST: Upload metadata immediately with exact creation timestamp
+        # This ensures metadata.json has the earliest LastModified time
+        creation_timestamp = datetime.utcnow().isoformat()
+        metadata_to_store = {
+            'run_id': run_id,
+            'created_at': creation_timestamp,
+            'solver_type': 'aws_lambda_worker',
+            'solutions_count': len(tables),
+            'folder_name': folder_name,
+            'result_number': result_num,
+            'upload_start_time': creation_timestamp,
+            'runtime_seconds': metadata.get('runtime_seconds', 0)
+        }
+        
+        metadata_key = f"{folder_name}/metadata.json"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(metadata_to_store, indent=2),
+            ContentType='application/json'
+        )
+        logger.info(f"[S3] Created metadata for {folder_name} at {creation_timestamp}")
+        
+        # SECOND: Upload ALL files from solver output directory to S3
         if not os.path.exists(solver_output_dir):
             logger.warning(f"[S3] Output directory does not exist: {solver_output_dir}")
             return folder_name
@@ -126,29 +150,6 @@ def upload_results_to_s3(run_id: str, tables: List[Dict], metadata: Dict[str, An
                     continue
         
         logger.info(f"[S3] Completed upload to {folder_name} - {file_count} files ({total_size} bytes)")
-        
-        # Upload metadata.json with timestamp and solver info
-        metadata_to_store = {
-            'run_id': run_id,
-            'created_at': datetime.utcnow().isoformat(),
-            'solver_type': 'aws_lambda_worker',
-            'solutions_count': len(tables),
-            'file_count': file_count,
-            'total_size': total_size,
-            'runtime_seconds': metadata.get('runtime_seconds', 0),
-            'folder_name': folder_name,
-            'result_number': result_num
-        }
-        
-        metadata_key = f"{folder_name}/metadata.json"
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=metadata_key,
-            Body=json.dumps(metadata_to_store, indent=2),
-            ContentType='application/json'
-        )
-        
-        logger.info(f"[S3] Uploaded metadata to {metadata_key}")
         return folder_name
         
     except Exception as e:
