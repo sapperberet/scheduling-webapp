@@ -442,15 +442,19 @@ const addShift = () => {
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                   Allowed Provider Types (comma-separated)
                 </label>
-                <input
-                  type="text"
+                <textarea
                   value={(shiftForm.allowed_provider_types || []).join(', ')}
-                  onChange={(e) => handleShiftFormChange(
-                    'allowed_provider_types',
-                    e.target.value.split(',').map(s => s.trim()).filter(s => s)
-                  )}
+                  onChange={(e) => {
+                    const input = e.target.value;
+                    const providers = input
+                      .split(',')
+                      .map(s => s.trim())
+                      .filter(s => s.length > 0);
+                    handleShiftFormChange('allowed_provider_types', providers);
+                  }}
                   placeholder="MD, NP, PA"
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white/90 dark:bg-gray-700/90 text-gray-900 dark:text-white backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:shadow-md"
+                  rows={2}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white/90 dark:bg-gray-700/90 text-gray-900 dark:text-white backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:shadow-md resize-none"
                 />
               </div>
 
