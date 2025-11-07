@@ -50,6 +50,8 @@ export default function ShiftsTab() {
     date: selectedDate || '',
     allowed_provider_types: [],
   });
+  // Store the raw text for the provider types textarea to allow editing
+  const [providerTypesText, setProviderTypesText] = useState<string>('');
   // Default to false to avoid accidentally adding a shift across many days
   const [addToAllDays, setAddToAllDays] = useState(false);
 
@@ -66,12 +68,15 @@ export default function ShiftsTab() {
 
   const handleShiftSelect = (shift: Shift) => {
     setSelectedShiftId(shift.id!); // Store the unique ID
+    const providers = shift.allowed_provider_types || [];
     setShiftForm({
       ...shift,
       start: formatTime(shift.start),
       end: formatTime(shift.end),
-      allowed_provider_types: shift.allowed_provider_types || [],
+      allowed_provider_types: providers,
     });
+    // Set the text version for editing
+    setProviderTypesText(providers.join(', '));
   };
 
   const handleShiftFormChange = (field: keyof Shift, value: string | string[] | null) => {
@@ -107,7 +112,7 @@ const addShift = () => {
               candidate.getFullYear() === base.getFullYear() &&
               candidate.getMonth() === base.getMonth()
             );
-          } catch (e) {
+          } catch {
             return false;
           }
         })
@@ -144,6 +149,7 @@ const addShift = () => {
       date: selectedDate || '',
       allowed_provider_types: [],
     });
+    setProviderTypesText('');
   };
 
   const updateShift = () => {
@@ -172,7 +178,7 @@ const addShift = () => {
             shiftDate.getFullYear() === targetYear &&
             shiftDate.getMonth() === targetMonth
           );
-        } catch (e) {
+        } catch {
           return false;
         }
       });
@@ -231,6 +237,7 @@ const addShift = () => {
       date: selectedDate || '',
       allowed_provider_types: [],
     });
+    setProviderTypesText('');
   };
 
   const deleteShift = () => {
@@ -259,7 +266,7 @@ const addShift = () => {
             shiftDate.getFullYear() === targetYear &&
             shiftDate.getMonth() === targetMonth
           );
-        } catch(e) {
+        } catch {
           return false;
         }
       });
@@ -283,6 +290,7 @@ const addShift = () => {
       date: selectedDate || '',
       allowed_provider_types: [],
     });
+    setProviderTypesText('');
   };
 
 
@@ -294,6 +302,7 @@ const addShift = () => {
       end: template.endTime,
       allowed_provider_types: template.allowedProviderTypes,
     }));
+    setProviderTypesText(template.allowedProviderTypes.join(', '));
   };
 
 
@@ -443,26 +452,22 @@ const addShift = () => {
                   Allowed Provider Types (comma-separated)
                 </label>
                 <textarea
-                  value={(shiftForm.allowed_provider_types || []).join(', ')}
+                  value={providerTypesText}
                   onChange={(e) => {
                     const input = e.target.value;
+                    // Update the display text
+                    setProviderTypesText(input);
+                    // Update the array version for saving
                     const providers = input
                       .split(',')
                       .map(s => s.trim())
                       .filter(s => s.length > 0);
                     handleShiftFormChange('allowed_provider_types', providers);
                   }}
-                  onCompositionEnd={(e) => {
-                    // Handle IME composition to ensure comma is captured
-                    setTimeout(() => {
-                      const textarea = e.target as HTMLTextAreaElement;
-                      const input = textarea.value;
-                      const providers = input
-                        .split(',')
-                        .map(s => s.trim())
-                        .filter(s => s.length > 0);
-                      handleShiftFormChange('allowed_provider_types', providers);
-                    }, 0);
+                  onBlur={() => {
+                    // When user leaves the field, clean up the text to match the saved array
+                    const providers = (shiftForm.allowed_provider_types || []);
+                    setProviderTypesText(providers.join(', '));
                   }}
                   placeholder="MD, NP, PA"
                   rows={2}
@@ -479,7 +484,9 @@ const addShift = () => {
                       onClick={() => {
                         const current = shiftForm.allowed_provider_types || [];
                         if (!current.includes(provider)) {
-                          handleShiftFormChange('allowed_provider_types', [...current, provider]);
+                          const updated = [...current, provider];
+                          handleShiftFormChange('allowed_provider_types', updated);
+                          setProviderTypesText(updated.join(', '));
                         }
                       }}
                       className={`px-3 py-1 text-xs rounded-lg transition-all duration-200 ${
