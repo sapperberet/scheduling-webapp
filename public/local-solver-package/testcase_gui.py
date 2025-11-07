@@ -1257,7 +1257,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
               + c_slack_cant_work * sum(slack_cant_work) 
               + c_slack_consec * sum(slack_consec)
               + c_slack_cant_work * sum(slack_hard_on))  # NEW: hard ON slack weighted like hard OFF
-    model.minimize(U)
+    model.Minimize(U)
 
     # Phase-1 solve (hard slacks) — VERBOSE + callback into logger
     solver = cp_model.CpSolver()
@@ -1465,7 +1465,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     #model.Add((av_target + 1) * len(P) >= s)
     total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
     model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))))
-    model.AddDivisionEquality(av_target, total_taken, len(P))
+    model.AddDivisionEquality(av_target, total_taken + len(P) - 1, len(P))
     personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
     provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
     for i in P:
@@ -1473,7 +1473,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     constant_absolutely_horrible = 1000000000000000
     absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
     abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
-    absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    absvsq = [model.NewIntVar(0, 1600, "absvsq%d" % j) for j in P]
     los = [model.NewIntVar(0, 50, "los%d" % j) for j in P]
     for j in P:
         lim = providers[j].get('limits', {}) or {}
@@ -1485,18 +1485,22 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         model.AddMinEquality(personal_target[j], [los[j], mx + solver.Value(slack_shift_more[j])])
         model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
         model.Add(deviations >= absvsq[j])
-    model.Add(deviations < 16)
+    #model.Add(deviations < 100000)
+    ultimate_const = (int) (5.6 * 10 ** 14)
+    very_heavy_cost = model.NewIntVar(0, 50, "above_3")
+    model.AddMaxEquality(very_heavy_cost, [0, deviations - 9])
     within_diff = model.NewIntVar(0, 1000, "within_diff")
     model.Add(within_diff == sum(absvsq))
-    model.Add(Weighted ==   cclusters * sum(cluster_square) +
+    model.Add(Weighted ==   ultimate_const * very_heavy_cost + 
+                            cclusters * sum(cluster_square) +
                             c_cluster_size * sum(cluster_cubesums) +   
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
                             c_soft_off * sum(soft_off_i) - 
                             100000000000 * total_taken + 
-                            ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
+                            ((c_soft_on + c_soft_off + 10) // 10  + 1 )* within_diff)
     print(count_horrible)
-    model.minimize(Weighted)
+    model.Minimize(Weighted)
     global trashcan
     for i in P:
         trashcan.add(personal_target[i])
@@ -2032,9 +2036,26 @@ def Solve_test_case(case):
     write_excel_hospital_multi(hosp_path, tables)
     write_excel_calendar_multi(cal_path, tables)
 
+    # Save input case for reference
+    input_case_path = os.path.join(out_dir, 'input_case.json')
+    with open(input_case_path, 'w', encoding='utf-8') as f:
+        json.dump(case, f, indent=2)
+    logger.info("Wrote input case: %s", input_case_path)
+
+    # Save results.json
+    results_path = os.path.join(out_dir, 'results.json')
+    results_data = {
+        "timestamp": ts,
+        "solutions": tables,
+        "metadata": meta
+    }
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(results_data, f, indent=2)
+    logger.info("Wrote results: %s", results_path)
+
     meta['run'] = {"timestamp": ts, "seed": seed, "out_dir": out_dir,
                    "files": {"grid": grid_path, "hospital": hosp_path, "calendar": cal_path,
-                             "capacity": caps_path}}
+                             "capacity": caps_path, "input_case": input_case_path, "results": results_path}}
     meta_path = os.path.join(out_dir, f'scheduler_log_{ts}.json')
     with open(meta_path,'w', encoding='utf-8') as f:
         json.dump(meta, f, indent=2)
@@ -2051,6 +2072,18 @@ def Solve_test_case(case):
     logger.info("Wrote calendar: %s", cal_path)
     logger.info("Wrote run meta: %s", meta_path)
     logger.info("===== SCHEDULER RUN COMPLETE %s =====", ts)
+    
+    # Run diagnosis on hospital schedule (works in both local and Lambda)
+    # Only run if we have solutions - diagnosis fails on empty schedules
+    if tables and len(tables) > 0 and hosp_path and os.path.exists(hosp_path):
+        try:
+            logger.info("Running diagnosis on schedule: %s", hosp_path)
+            # Use the input_case.json we just saved as the case file for diagnosis
+            run_diag(input_case_path, hosp_path)
+        except Exception as e:
+            logger.error("Diagnosis failed: %s", str(e))
+    elif not tables:
+        logger.info("Skipping diagnosis: no solutions generated (Phase 2 was infeasible)")
 
     return tables, meta
 # ---------- Defaults ----------
@@ -3548,6 +3581,16 @@ def _solver_child_main(argv):
     print(case_path, CHOSPITAL)
 
     run_diag(case_path, CHOSPITAL)
+
+# ---------- Lambda wrapper ----------
+def Solve_test_case_lambda(case_path):
+    """
+    Lambda-safe wrapper for Solve_test_case.
+    Takes case_path, runs solver, returns (tables, metadata) tuple.
+    """
+    _ensure_tkinter_imported()
+    tables, meta = Solve_test_case(case_path)
+    return tables, meta
 
 # ---------- main ----------
 def main():

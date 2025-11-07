@@ -1465,7 +1465,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     #model.Add((av_target + 1) * len(P) >= s)
     total_taken = model.NewIntVar(0, nshifts + 5, "total_taken")
     model.Add(total_taken == sum(x[i, j] for i in range(len(S)) for j in range(len(P))))
-    model.AddDivisionEquality(av_target, total_taken, len(P))
+    model.AddDivisionEquality(av_target, total_taken + len(P) - 1, len(P))
     personal_target = [model.NewIntVar(0, 40, "personal_target_%d" % j) for j in P]
     provider_taken = [model.NewIntVar(0, 40, "provider_taken_%d" % i) for i in P]
     for i in P:
@@ -1473,7 +1473,7 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
     constant_absolutely_horrible = 1000000000000000
     absv = [model.NewIntVar(0, 40, "absv%d" % j) for j in P]
     abst = [model.NewIntVar(0, 40, "abst%d" % j) for j in P]
-    absvsq = [model.NewIntVar(0, 1600, "abstsq%d" % j) for j in P]
+    absvsq = [model.NewIntVar(0, 1600, "absvsq%d" % j) for j in P]
     los = [model.NewIntVar(0, 50, "los%d" % j) for j in P]
     for j in P:
         lim = providers[j].get('limits', {}) or {}
@@ -1485,16 +1485,20 @@ def build_model(consts: Dict[str,Any], case: Dict[str,Any]) -> Dict[str,Any]:
         model.AddMinEquality(personal_target[j], [los[j], mx + solver.Value(slack_shift_more[j])])
         model.AddMultiplicationEquality(absvsq[j], [absv[j], absv[j]])
         model.Add(deviations >= absvsq[j])
-    model.Add(deviations < 16)
+    #model.Add(deviations < 100000)
+    ultimate_const = (int) (5.6 * 10 ** 14)
+    very_heavy_cost = model.NewIntVar(0, 50, "above_3")
+    model.AddMaxEquality(very_heavy_cost, [0, deviations - 9])
     within_diff = model.NewIntVar(0, 1000, "within_diff")
     model.Add(within_diff == sum(absvsq))
-    model.Add(Weighted ==   cclusters * sum(cluster_square) +
+    model.Add(Weighted ==   ultimate_const * very_heavy_cost + 
+                            cclusters * sum(cluster_square) +
                             c_cluster_size * sum(cluster_cubesums) +   
                             cweekend_not_clustered * sum(count_horrible) + 
                             c_soft_on * sum(soft_on_i) + 
                             c_soft_off * sum(soft_off_i) - 
                             100000000000 * total_taken + 
-                            ((c_soft_on + c_soft_off + 2) // 10  + 1 )* within_diff)
+                            ((c_soft_on + c_soft_off + 10) // 10  + 1 )* within_diff)
     print(count_horrible)
     model.Minimize(Weighted)
     global trashcan
