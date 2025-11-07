@@ -452,10 +452,46 @@ const addShift = () => {
                       .filter(s => s.length > 0);
                     handleShiftFormChange('allowed_provider_types', providers);
                   }}
+                  onCompositionEnd={(e) => {
+                    // Handle IME composition to ensure comma is captured
+                    setTimeout(() => {
+                      const textarea = e.target as HTMLTextAreaElement;
+                      const input = textarea.value;
+                      const providers = input
+                        .split(',')
+                        .map(s => s.trim())
+                        .filter(s => s.length > 0);
+                      handleShiftFormChange('allowed_provider_types', providers);
+                    }, 0);
+                  }}
                   placeholder="MD, NP, PA"
                   rows={2}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white/90 dark:bg-gray-700/90 text-gray-900 dark:text-white backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:shadow-md resize-none"
+                  spellCheck="false"
+                  autoComplete="off"
                 />
+                
+                {/* Quick add provider buttons */}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {['MD', 'NP', 'PA', 'RN', 'LPN', 'PHARM'].map((provider) => (
+                    <button
+                      key={provider}
+                      onClick={() => {
+                        const current = shiftForm.allowed_provider_types || [];
+                        if (!current.includes(provider)) {
+                          handleShiftFormChange('allowed_provider_types', [...current, provider]);
+                        }
+                      }}
+                      className={`px-3 py-1 text-xs rounded-lg transition-all duration-200 ${
+                        (shiftForm.allowed_provider_types || []).includes(provider)
+                          ? 'bg-blue-500 text-white shadow-md'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {provider}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center space-x-2">
